@@ -1,7 +1,6 @@
 import type React from "react";
 import { useRef, useState } from "react";
 import { useDeviceStore } from "../../stores/deviceStore";
-import { useGameStore } from "../../stores/gameStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { touchCameraMovement } from "../../utils/touchCamera";
 
@@ -14,8 +13,6 @@ const KEY_CODES: Record<string, string> = {
   Shift: "ShiftLeft",
 };
 
-const MINE_PROXIMITY = 50;
-
 // Button size presets
 const BTN_SIZES = {
   small: { joystick: "w-24 h-24", button: "w-16 h-16", text: "text-xs" },
@@ -25,7 +22,6 @@ const BTN_SIZES = {
 
 export const MobileControls: React.FC = () => {
   const isMobile = useDeviceStore((s) => s.isMobile);
-  const nearestTargetDistance = useGameStore((s) => s.nearestTargetDistance);
   const { joystickSensitivity, buttonSize, hapticsEnabled } =
     useSettingsStore();
   const [joystickPos, setJoystickPos] = useState({ x: 0, y: 0 });
@@ -41,7 +37,6 @@ export const MobileControls: React.FC = () => {
 
   if (!isMobile) return null;
 
-  const isNearAsteroid = nearestTargetDistance < MINE_PROXIMITY;
   const sizes = BTN_SIZES[buttonSize];
 
   const haptic = (duration = 20) => {
@@ -216,35 +211,6 @@ export const MobileControls: React.FC = () => {
           BRAKE
         </button>
       </div>
-
-      {/* Context MINE button - shows only when near asteroid */}
-      {isNearAsteroid && (
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 pointer-events-auto">
-          <div className="relative flex items-center justify-center">
-            {/* Pulse rings */}
-            <span className="absolute inline-flex h-32 w-32 rounded-full bg-cyan-400/20 animate-ping" />
-            <span
-              className="absolute inline-flex h-28 w-28 rounded-full bg-cyan-400/30 animate-ping"
-              style={{ animationDelay: "0.15s" }}
-            />
-            <button
-              type="button"
-              data-ocid="mobile_controls.button"
-              onTouchStart={(e) => {
-                e.preventDefault();
-                haptic(30);
-                window.dispatchEvent(
-                  new MouseEvent("click", { bubbles: true }),
-                );
-              }}
-              className="relative w-28 h-28 rounded-full bg-cyan-500/90 border-2 border-cyan-300 flex flex-col items-center justify-center font-bold text-base font-mono tracking-widest active:scale-90 transition-transform shadow-xl shadow-cyan-500/50 touch-none gap-1"
-            >
-              <span className="text-2xl">⛏</span>
-              <span>MINE</span>
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

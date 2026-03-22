@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { MobileControls } from "./components/Controls/MobileControls";
 import GameCanvas from "./components/Game/GameCanvas";
-import { StoryEventPanel } from "./components/Story/StoryEventPanel";
+import { StoryPanel } from "./components/Story/StoryPanel";
 import PauseMenu from "./components/UI/PauseMenu";
 import StartScreen from "./components/UI/StartScreen";
 import { useDeviceStore } from "./stores/deviceStore";
@@ -61,7 +61,7 @@ export default function App() {
           {showPauseMenu && <PauseMenu />}
         </>
       )}
-      <StoryEventPanel />
+      <StoryPanel />
       <MobileControls />
     </div>
   );
