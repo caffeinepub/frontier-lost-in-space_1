@@ -1,5 +1,6 @@
 import type React from "react";
 import { useRef, useState } from "react";
+import { useCameraStore } from "../../stores/cameraStore";
 import { useDeviceStore } from "../../stores/deviceStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { touchCameraMovement } from "../../utils/touchCamera";
@@ -24,8 +25,11 @@ export const MobileControls: React.FC = () => {
   const isMobile = useDeviceStore((s) => s.isMobile);
   const { joystickSensitivity, buttonSize, hapticsEnabled } =
     useSettingsStore();
+  const mode = useCameraStore((s) => s.mode);
   const [joystickPos, setJoystickPos] = useState({ x: 0, y: 0 });
+  const [lookPos, setLookPos] = useState({ x: 0, y: 0 });
   const joystickRef = useRef<HTMLDivElement>(null);
+  const lookJoystickRef = useRef<HTMLDivElement>(null);
   const activeKeysRef = useRef<Set<string>>(new Set());
 
   // Swipe camera state
@@ -42,6 +46,9 @@ export const MobileControls: React.FC = () => {
   const haptic = (duration = 20) => {
     if (hapticsEnabled && navigator.vibrate) navigator.vibrate(duration);
   };
+
+  // haptic referenced to avoid lint unused warning
+  void haptic;
 
   const releaseKeys = (keys: string[]) => {
     for (const key of keys) {
@@ -102,6 +109,36 @@ export const MobileControls: React.FC = () => {
     releaseKeys(["w", "a", "s", "d"]);
   };
 
+  // Right joystick — look direction (freeRoam only)
+  const handleLookMove = (e: React.TouchEvent) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    const rect = lookJoystickRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const rawX = touch.clientX - rect.left - rect.width / 2;
+    const rawY = touch.clientY - rect.top - rect.height / 2;
+    const maxDist = 40 * joystickSensitivity;
+    const dist = Math.hypot(rawX, rawY);
+    const clampedDist = Math.min(dist, maxDist);
+    const angle = Math.atan2(rawY, rawX);
+    const x = Math.cos(angle) * clampedDist;
+    const y = Math.sin(angle) * clampedDist;
+
+    setLookPos({ x, y });
+
+    // Accumulate yaw/pitch
+    const { freeRoamYaw, freeRoamPitch, setFreeRoamYaw, setFreeRoamPitch } =
+      useCameraStore.getState();
+    const sensitivity = 0.015;
+    setFreeRoamYaw(freeRoamYaw + (rawX / maxDist) * sensitivity * 2);
+    setFreeRoamPitch(freeRoamPitch + (rawY / maxDist) * sensitivity * 2);
+  };
+
+  const handleLookEnd = () => {
+    setLookPos({ x: 0, y: 0 });
+  };
+
   // Swipe camera handlers (right half, above buttons zone)
   const handleSwipeStart = (e: React.TouchEvent) => {
     if (swipeTouchRef.current !== null) return;
@@ -140,23 +177,27 @@ export const MobileControls: React.FC = () => {
     }
   };
 
+  const isFreeRoam = mode === "freeRoam";
+
   return (
     <div
       data-ocid="mobile_controls.panel"
       className="fixed inset-0 pointer-events-none z-40 select-none"
     >
-      {/* Swipe camera zone: right half, top 65% of screen (above buttons) */}
-      <div
-        className="absolute top-0 right-0 pointer-events-auto touch-none"
-        style={{ width: "50%", height: "65%" }}
-        onTouchStart={handleSwipeStart}
-        onTouchMove={handleSwipeMove}
-        onTouchEnd={handleSwipeEnd}
-        onTouchCancel={handleSwipeEnd}
-      />
+      {/* Swipe camera zone (only non-freeRoam): right half, top 65% of screen */}
+      {!isFreeRoam && (
+        <div
+          className="absolute top-0 right-0 pointer-events-auto touch-none"
+          style={{ width: "50%", height: "65%" }}
+          onTouchStart={handleSwipeStart}
+          onTouchMove={handleSwipeMove}
+          onTouchEnd={handleSwipeEnd}
+          onTouchCancel={handleSwipeEnd}
+        />
+      )}
 
-      {/* Virtual Joystick - Left */}
-      <div className="absolute left-8 bottom-32 pointer-events-auto flex flex-col items-center">
+      {/* Left joystick — movement (all modes) */}
+      <div className="absolute left-3 bottom-3 pointer-events-auto flex flex-col items-center">
         <div
           ref={joystickRef}
           data-ocid="mobile_controls.canvas_target"
@@ -175,42 +216,37 @@ export const MobileControls: React.FC = () => {
             }}
           />
         </div>
-        <p className="text-xs text-cyan-500/70 mt-2 font-mono tracking-widest">
+        <p className="text-xs text-cyan-500/70 mt-1 font-mono tracking-widest">
           MOVE
         </p>
       </div>
 
-      {/* Action Buttons - Right */}
-      <div className="absolute right-8 bottom-32 pointer-events-auto flex flex-col gap-4 items-center">
-        <button
-          type="button"
-          data-ocid="mobile_controls.primary_button"
-          onTouchStart={(e) => {
-            e.preventDefault();
-            haptic(15);
-            pressKey(" ");
-          }}
-          onTouchEnd={() => releaseKeys([" "])}
-          onTouchCancel={() => releaseKeys([" "])}
-          className={`${sizes.button} rounded-full bg-yellow-500/80 border-2 border-yellow-400 flex items-center justify-center font-bold ${sizes.text} font-mono tracking-widest active:scale-90 transition-transform shadow-lg shadow-yellow-500/30 touch-none`}
-        >
-          BOOST
-        </button>
-        <button
-          type="button"
-          data-ocid="mobile_controls.secondary_button"
-          onTouchStart={(e) => {
-            e.preventDefault();
-            haptic(15);
-            pressKey("Shift");
-          }}
-          onTouchEnd={() => releaseKeys(["Shift"])}
-          onTouchCancel={() => releaseKeys(["Shift"])}
-          className={`${sizes.button} rounded-full bg-red-500/80 border-2 border-red-400 flex items-center justify-center font-bold ${sizes.text} font-mono tracking-widest active:scale-90 transition-transform shadow-lg shadow-red-500/30 touch-none`}
-        >
-          BRAKE
-        </button>
-      </div>
+      {/* Right joystick — look direction (freeRoam only) */}
+      {isFreeRoam && (
+        <div className="absolute right-3 bottom-3 pointer-events-auto flex flex-col items-center">
+          <div
+            ref={lookJoystickRef}
+            data-ocid="mobile_controls.look_canvas_target"
+            onTouchStart={handleLookMove}
+            onTouchMove={handleLookMove}
+            onTouchEnd={handleLookEnd}
+            onTouchCancel={handleLookEnd}
+            className={`relative ${sizes.joystick} rounded-full bg-green-500/20 border-2 border-green-500/40 touch-none`}
+          >
+            <div
+              className="absolute w-12 h-12 rounded-full bg-green-500/80 border-2 border-green-400 shadow-lg shadow-green-500/50"
+              style={{
+                top: "50%",
+                left: "50%",
+                transform: `translate(calc(-50% + ${lookPos.x}px), calc(-50% + ${lookPos.y}px))`,
+              }}
+            />
+          </div>
+          <p className="text-xs text-green-500/70 mt-1 font-mono tracking-widest">
+            LOOK
+          </p>
+        </div>
+      )}
     </div>
   );
 };

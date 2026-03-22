@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { MobileControls } from "./components/Controls/MobileControls";
 import GameCanvas from "./components/Game/GameCanvas";
 import { StoryPanel } from "./components/Story/StoryPanel";
+import { PanelRouter } from "./components/UI/PanelRouter";
 import PauseMenu from "./components/UI/PauseMenu";
 import StartScreen from "./components/UI/StartScreen";
 import { useDeviceStore } from "./stores/deviceStore";
@@ -62,6 +63,7 @@ export default function App() {
         </>
       )}
       <StoryPanel />
+      <PanelRouter />
       <MobileControls />
     </div>
   );

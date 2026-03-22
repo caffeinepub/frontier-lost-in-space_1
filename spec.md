@@ -1,51 +1,53 @@
-# Frontier: Lost in Space
+# Frontier: Orbital Combat
 
 ## Current State
-New project. No existing application files.
+- Two camera modes: `orbital` (far, auto-orbit) and `cockpit` (close, weapons UI)
+- ViewToggle at top-center cycles between the two
+- CameraOrbitController handles smooth lerp between modes
+- HUD conditionally shows orbital vs cockpit UI
+- MobileControls has a single left joystick for movement
+- `@react-three/postprocessing` is NOT installed
+- shipStore has fuel/maxFuel, cargo/maxCargo; inventoryStore has resources/totalWeight
 
 ## Requested Changes (Diff)
 
 ### Add
-- Full 3D browser-based space exploration and crafting game
-- React Three Fiber 3D scene with physics-based ship navigation
-- Procedural asteroid field generation with instanced meshes
-- Procedural star field background (parallax layers)
-- Points of interest: derelict ships, space stations, anomalies
-- Ship controller: WASD movement, mouse look, pointer lock, boost/brake
-- Physics system: momentum, inertia, velocity-based movement
-- Mining system: raycast targeting, laser beam, progress extraction, resource gathering
-- 9 resource types: Iron, Silicon, Carbon, Titanium, Platinum, Rare Earth Elements, Exotic Matter, Dark Matter, Quantum Crystals
-- Inventory management: weight/volume-based system
-- Crafting system: recipe database, crafting UI, component installation
-- Ship components: hull upgrades, engine upgrades, mining lasers, shields, scanners, refineries
-- Survival systems: fuel, hull integrity, oxygen, power management
-- HUD: velocity indicator, fuel gauge, hull integrity, cargo capacity, crosshair, mini-map/radar
-- TAB key toggles HUD visibility for immersive mode
-- Auto-save/load system using localStorage
-- Quick restart option
-- Tutorial/onboarding flow
-- Particle effects: engine thrust, mining laser
-- Zustand stores: gameStore, shipStore, inventoryStore, craftingStore
-- TypeScript interfaces for all game types
+- Third camera mode: `freeRoam` — full 6DOF flight, detached from orbital lock
+- Combat mode replaces cockpit: same close camera + weapons UI, but ship auto-orbits Earth and player only aims (±45° pitch, ±90° yaw)
+- Aim pitch/yaw state in cameraStore for combat mode
+- Desktop controls for freeRoam: WASD movement + mouse look (pointer lock)
+- Mobile controls for freeRoam: left joystick = move, right joystick = look direction
+- Post-processing effects (MotionBlur 0.6, ChromaticAberration, Vignette) active only in combat mode
+- Free Roam compact HUD overlay: fuel bar, cargo used/max, mineral scanner readout (top mined resource)
+- 200ms CSS fade transitions on all conditional HUD elements
+- Install `@react-three/postprocessing` package
 
 ### Modify
-- App.tsx: render the full game canvas
+- `CameraMode` type: `'orbital' | 'cockpit'` → `'orbital' | 'combat' | 'freeRoam'`
+- ViewToggle: cycles orbital→combat→freeRoam, with cyan/amber/green color theme
+- CameraOrbitController: add combat (close + auto-orbit, no drag) and freeRoam (6DOF WASD/mouse) branches
+- HUD conditional visibility: cockpit → combat; add freeRoam branch with compact HUD
+- LockedIndicator: show in `combat` mode instead of `cockpit`
+- AimCone + WeaponPanel: show in `combat` mode
+- LaneIndicator, ScanCmdButtons, NAV/SCAN menu tabs: show in `orbital` only
+- MobileControls: add second right joystick visible only in freeRoam mode
+- NavMenuBar: hide NAV/SCAN in combat and freeRoam
 
 ### Remove
-- Nothing (new project)
+- `cockpit` as a mode label (replaced by `combat`)
 
 ## Implementation Plan
-1. Define all TypeScript types/interfaces in `src/types/game.ts`
-2. Create Zustand stores: gameStore, shipStore, inventoryStore, craftingStore
-3. Implement utility modules: physics.ts, generation.ts, constants.ts
-4. Build Environment components: StarField, AsteroidField (instanced), SpaceStation, DerelictShip, Anomaly
-5. Build Ship component with ShipController (pointer lock, WASD, mouse look, physics)
-6. Build HUD system: velocity, fuel, hull, cargo, crosshair, radar, scanner
-7. Build Mining system: targeting reticle, laser beam, progress bar, extraction logic
-8. Build Inventory UI: resource grid, weight display, component list
-9. Build Crafting UI: recipe browser, category filters, resource requirements, craft queue
-10. Build Game container: Canvas setup, lighting, fog, scene composition
-11. Wire auto-save (localStorage) and restart logic
-12. Add particle effects for engine thrust and mining laser
-13. Implement collision detection for hull damage
-14. Performance: LOD, frustum culling, object pooling
+1. Install `@react-three/postprocessing` via package.json
+2. Update `cameraStore.ts`: add `combat` and `freeRoam` modes; add `aimPitch`, `aimYaw`, `setAimPitch`, `setAimYaw` to state
+3. Update `GameCanvas.tsx` CameraOrbitController to handle 3 modes:
+   - `orbital`: existing far auto-orbit logic
+   - `combat`: close camera, ship auto-orbits, player aim offsets camera direction via aimPitch/aimYaw
+   - `freeRoam`: WASD-driven position delta + mouse look via pointer lock
+4. Add PostProcessing wrapper in GameCanvas Canvas (EffectComposer with MotionBlur, ChromaticAberration, Vignette) — active only in combat mode
+5. Update `HUD.tsx`:
+   - ViewToggle: 3-way cycle with correct colors/icons/labels
+   - All `cockpit` references → `combat`
+   - Add `FreeRoamHUD` component: compact fuel/cargo/scanner readout, visible only in freeRoam
+   - Add CSS transition classes on conditional panel wrappers
+6. Update `MobileControls.tsx`: add right joystick for look direction, visible only in freeRoam mode; left joystick stays for all modes
+7. Wire combat aim: mouse move events update aimPitch/aimYaw when mode === combat; clamp to ±45° / ±90°

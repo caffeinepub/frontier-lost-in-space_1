@@ -2,6 +2,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { useGameStore } from "../../stores/gameStore";
+import { useLaneStore } from "../../stores/laneStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useShipStore } from "../../stores/shipStore";
 import { handleFireButton } from "../../systems/combat";
@@ -44,10 +45,22 @@ export default function ShipController() {
       if (e.code === "KeyF") {
         handleFireButton();
       }
+      // Lane controls: Q = down, E = up
+      if (e.code === "KeyQ") {
+        useLaneStore.getState().changeLane("down");
+      }
+      if (e.code === "KeyE") {
+        useLaneStore.getState().changeLane("up");
+      }
     };
     const handleKeyUp = (e: KeyboardEvent) => keys.current.delete(e.code);
 
     const handleMouseMove = (e: MouseEvent) => {
+      // Aim angle from mouse X movement (always active)
+      const aimDelta = e.movementX * 0.5;
+      const currentAim = useLaneStore.getState().aimAngle;
+      useLaneStore.getState().setAimAngle(currentAim + aimDelta);
+
       if (!isPointerLocked.current) return;
       mouseMovement.current.x += e.movementX;
       mouseMovement.current.y += e.movementY;
@@ -114,8 +127,11 @@ export default function ShipController() {
     );
     mouseMovement.current = { x: 0, y: 0 };
 
-    if (keys.current.has("KeyQ")) roll.current += PHYSICS.ROTATION_SPEED * dt;
-    if (keys.current.has("KeyE")) roll.current -= PHYSICS.ROTATION_SPEED * dt;
+    // Roll still available via direct ref manipulation if needed (Q/E now do lane changes)
+    const rollQ = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 0, 1),
+      roll.current,
+    );
 
     const quaternion = new THREE.Quaternion();
     const yawQ = new THREE.Quaternion().setFromAxisAngle(
@@ -125,10 +141,6 @@ export default function ShipController() {
     const pitchQ = new THREE.Quaternion().setFromAxisAngle(
       new THREE.Vector3(1, 0, 0),
       pitch.current,
-    );
-    const rollQ = new THREE.Quaternion().setFromAxisAngle(
-      new THREE.Vector3(0, 0, 1),
-      roll.current,
     );
     quaternion.multiplyQuaternions(yawQ, pitchQ).multiply(rollQ);
 

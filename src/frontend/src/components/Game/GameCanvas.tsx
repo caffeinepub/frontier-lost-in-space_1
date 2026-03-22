@@ -1,6 +1,15 @@
-import { Canvas, useFrame } from "@react-three/fiber";
-import { useCallback, useState } from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import {
+  ChromaticAberration,
+  EffectComposer,
+  Vignette,
+} from "@react-three/postprocessing";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import * as THREE from "three";
+import { useCameraStore } from "../../stores/cameraStore";
 import { useGameStore } from "../../stores/gameStore";
+import { useLaneStore } from "../../stores/laneStore";
 import { useExplosionStore } from "../../stores/useExplosionStore";
 import { useProjectileStore } from "../../stores/useProjectileStore";
 import type { ProjectileData } from "../../stores/useProjectileStore";
@@ -56,6 +65,186 @@ function ExplosionLayer() {
   );
 }
 
+/** Post-processing effects — only active in COMBAT mode */
+function PostFX() {
+  const mode = useCameraStore((s) => s.mode);
+  if (mode !== "combat") return null;
+  return (
+    <EffectComposer>
+      <ChromaticAberration
+        offset={new THREE.Vector2(0.002, 0.002)}
+        radialModulation={false}
+        modulationOffset={0}
+      />
+      <Vignette eskil={false} offset={0.3} darkness={0.7} />
+    </EffectComposer>
+  );
+}
+
+interface CameraOrbitControllerProps {
+  thetaRef: React.MutableRefObject<number>;
+  phiRef: React.MutableRefObject<number>;
+  isDragging: React.MutableRefObject<boolean>;
+  keysDown: React.MutableRefObject<Set<string>>;
+}
+
+const ORBITAL_RADIUS_OFFSET = 2.2;
+const ORBITAL_HEIGHT_PHI = 0.35;
+const COCKPIT_Z = 2.0;
+const COCKPIT_Y = 0.22;
+// Combat: tight orbit radius (close behind ship)
+const COMBAT_ORBIT_RADIUS = 2.2;
+const FREE_ROAM_SPEED = 1.5; // units/sec
+
+function CameraOrbitController({
+  thetaRef,
+  phiRef,
+  isDragging,
+  keysDown,
+}: CameraOrbitControllerProps) {
+  const { camera } = useThree();
+  const currentPosRef = useRef({ x: 0, y: 0.22, z: 2.0 });
+
+  useFrame((_, delta) => {
+    const state = useCameraStore.getState();
+    const cameraMode = state.mode;
+
+    if (cameraMode === "combat") {
+      // Auto-orbit using current lane radius
+      const laneRadius = useLaneStore.getState().getCurrentRadius();
+      thetaRef.current += delta * 0.03;
+      const theta = thetaRef.current;
+
+      // Ship orbit point on the lane sphere
+      const orbitX = Math.sin(theta) * laneRadius;
+      const orbitZ = Math.cos(theta) * laneRadius;
+
+      // Camera sits slightly behind/above the orbit point
+      const camX =
+        orbitX * (COMBAT_ORBIT_RADIUS / laneRadius + 1) * 0.12 + orbitX;
+      const camY = COCKPIT_Y + 0.1;
+      const camZ =
+        orbitZ * (COMBAT_ORBIT_RADIUS / laneRadius + 1) * 0.12 + orbitZ;
+
+      // Smooth lerp to combat position
+      const lerpSpeed = 4.0 * delta;
+      currentPosRef.current.x += (camX - currentPosRef.current.x) * lerpSpeed;
+      currentPosRef.current.y += (camY - currentPosRef.current.y) * lerpSpeed;
+      currentPosRef.current.z += (camZ - currentPosRef.current.z) * lerpSpeed;
+
+      camera.position.set(
+        currentPosRef.current.x,
+        currentPosRef.current.y,
+        currentPosRef.current.z,
+      );
+
+      // Apply aim offsets to lookAt
+      const aimPitch = state.aimPitch;
+      const aimYaw = state.aimYaw;
+      const lookDir = new THREE.Vector3(
+        Math.sin(aimYaw),
+        Math.sin(aimPitch),
+        -Math.cos(aimYaw),
+      );
+      const lookTarget = new THREE.Vector3(
+        currentPosRef.current.x + lookDir.x,
+        currentPosRef.current.y + lookDir.y,
+        currentPosRef.current.z + lookDir.z - 2,
+      );
+      camera.lookAt(lookTarget);
+      return;
+    }
+
+    if (cameraMode === "freeRoam") {
+      // WASD movement in freeRoam
+      const yaw = state.freeRoamYaw;
+      const pitch = state.freeRoamPitch;
+      const pos = { ...state.freeRoamPos };
+
+      // Forward/back/strafe based on yaw
+      const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+      const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+      const speed = FREE_ROAM_SPEED * delta;
+
+      if (keysDown.current.has("KeyW")) {
+        pos.x += forward.x * speed;
+        pos.z += forward.z * speed;
+      }
+      if (keysDown.current.has("KeyS")) {
+        pos.x -= forward.x * speed;
+        pos.z -= forward.z * speed;
+      }
+      if (keysDown.current.has("KeyA")) {
+        pos.x -= right.x * speed;
+        pos.z -= right.z * speed;
+      }
+      if (keysDown.current.has("KeyD")) {
+        pos.x += right.x * speed;
+        pos.z += right.z * speed;
+      }
+
+      useCameraStore.getState().setFreeRoamPos(pos);
+
+      camera.position.set(pos.x, pos.y, pos.z);
+      camera.rotation.order = "YXZ";
+      camera.rotation.y = yaw;
+      camera.rotation.x = pitch;
+      return;
+    }
+
+    // Orbital mode — original logic
+    const laneRadius = useLaneStore.getState().getCurrentRadius();
+    const RADIUS = laneRadius + ORBITAL_RADIUS_OFFSET;
+
+    if (!isDragging.current) {
+      thetaRef.current += delta * 0.03;
+    }
+    const theta = thetaRef.current;
+    const phi = Math.max(-0.3, Math.min(0.8, phiRef.current));
+    const targetX = RADIUS * Math.cos(phi) * Math.cos(theta);
+    const targetY = RADIUS * Math.sin(phi) + ORBITAL_HEIGHT_PHI;
+    const targetZ = RADIUS * Math.cos(phi) * Math.sin(theta);
+
+    const lerpSpeed = 3.0 * delta;
+    currentPosRef.current.x += (targetX - currentPosRef.current.x) * lerpSpeed;
+    currentPosRef.current.y += (targetY - currentPosRef.current.y) * lerpSpeed;
+    currentPosRef.current.z += (targetZ - currentPosRef.current.z) * lerpSpeed;
+
+    camera.position.set(
+      currentPosRef.current.x,
+      currentPosRef.current.y,
+      currentPosRef.current.z,
+    );
+    camera.lookAt(0, 0, 0);
+  });
+
+  // Cockpit mode (legacy, keep for smooth transition if ever needed)
+  useFrame((_, delta) => {
+    const cameraMode = useCameraStore.getState().mode;
+    if (
+      cameraMode !== "orbital" &&
+      cameraMode !== "combat" &&
+      cameraMode !== "freeRoam"
+    ) {
+      const lerpSpeed = 3.5 * delta;
+      currentPosRef.current.x += (0 - currentPosRef.current.x) * lerpSpeed;
+      currentPosRef.current.y +=
+        (COCKPIT_Y - currentPosRef.current.y) * lerpSpeed;
+      currentPosRef.current.z +=
+        (COCKPIT_Z - currentPosRef.current.z) * lerpSpeed;
+
+      camera.position.set(
+        currentPosRef.current.x,
+        currentPosRef.current.y,
+        currentPosRef.current.z,
+      );
+      camera.lookAt(0, 0, 0);
+    }
+  });
+
+  return null;
+}
+
 export default function GameCanvas() {
   const [targetId, setTargetId] = useState<string | null>(null);
   const [targetDistance, setTargetDistance] = useState(
@@ -63,6 +252,55 @@ export default function GameCanvas() {
   );
   const { showInventory, showCrafting, setNearestTargetDistance } =
     useGameStore();
+
+  // Spherical camera orbit state
+  const thetaRef = useRef(0);
+  const phiRef = useRef(0.35);
+  const isDragging = useRef(false);
+  const lastPointer = useRef({ x: 0, y: 0 });
+  const keysDown = useRef<Set<string>>(new Set());
+
+  // Track keyboard state for freeRoam WASD
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => keysDown.current.add(e.code);
+    const onKeyUp = (e: KeyboardEvent) => keysDown.current.delete(e.code);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, []);
+
+  // Mouse look for COMBAT aim
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      const mode = useCameraStore.getState().mode;
+      if (mode !== "combat") return;
+      const { aimPitch, aimYaw, setAimPitch, setAimYaw } =
+        useCameraStore.getState();
+      const sensitivity = 0.0015;
+      setAimYaw(aimYaw + e.movementX * sensitivity);
+      setAimPitch(aimPitch - e.movementY * sensitivity);
+    };
+    window.addEventListener("mousemove", onMouseMove);
+    return () => window.removeEventListener("mousemove", onMouseMove);
+  }, []);
+
+  // Mouse look for freeRoam
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      const mode = useCameraStore.getState().mode;
+      if (mode !== "freeRoam") return;
+      const { freeRoamYaw, freeRoamPitch, setFreeRoamYaw, setFreeRoamPitch } =
+        useCameraStore.getState();
+      const sensitivity = 0.0015;
+      setFreeRoamYaw(freeRoamYaw + e.movementX * sensitivity);
+      setFreeRoamPitch(freeRoamPitch - e.movementY * sensitivity);
+    };
+    window.addEventListener("mousemove", onMouseMove);
+    return () => window.removeEventListener("mousemove", onMouseMove);
+  }, []);
 
   const handleTargetChange = useCallback(
     (id: string | null, dist: number) => {
@@ -73,10 +311,36 @@ export default function GameCanvas() {
     [setNearestTargetDistance],
   );
 
+  const mode = useCameraStore((s) => s.mode);
+  const isCombatOrFreeRoam = mode === "combat" || mode === "freeRoam";
+
   return (
-    <div className="w-full h-full relative">
+    <div
+      className="w-full h-full relative"
+      style={{ touchAction: "none" }}
+      onPointerDown={(e) => {
+        // Only allow orbital drag in orbital mode
+        if (mode !== "orbital") return;
+        isDragging.current = true;
+        lastPointer.current = { x: e.clientX, y: e.clientY };
+      }}
+      onPointerMove={(e) => {
+        if (!isDragging.current || isCombatOrFreeRoam) return;
+        const dx = e.clientX - lastPointer.current.x;
+        const dy = e.clientY - lastPointer.current.y;
+        thetaRef.current -= dx * 0.005;
+        phiRef.current -= dy * 0.005;
+        lastPointer.current = { x: e.clientX, y: e.clientY };
+      }}
+      onPointerUp={() => {
+        isDragging.current = false;
+      }}
+      onPointerLeave={() => {
+        isDragging.current = false;
+      }}
+    >
       <Canvas
-        camera={{ fov: 60, near: 0.05, far: 1000, position: [0, 0.5, 2.8] }}
+        camera={{ fov: 55, near: 0.05, far: 1000, position: [0, 0.5, 5.0] }}
         gl={{ antialias: true, alpha: false }}
         style={{ background: "#081626" }}
       >
@@ -100,10 +364,20 @@ export default function GameCanvas() {
           distance={300}
         />
 
+        {/* Camera controller */}
+        <CameraOrbitController
+          thetaRef={thetaRef}
+          phiRef={phiRef}
+          isDragging={isDragging}
+          keysDown={keysDown}
+        />
+
+        {/* Post-processing — combat mode only */}
+        <PostFX />
+
         {/* Scene */}
         <StarField />
 
-        {/* Earth Globe — centered at world origin */}
         <group position={[0, 0, 0]}>
           <EarthGlobe />
         </group>
