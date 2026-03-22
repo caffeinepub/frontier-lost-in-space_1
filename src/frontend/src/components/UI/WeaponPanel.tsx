@@ -3,32 +3,53 @@ import { useWeaponsStore } from "../../stores/useWeaponsStore";
 import { handleFireButton } from "../../systems/combat";
 import type { WeaponId } from "../../types/game";
 
+// Short display labels for nav-tab style — no ammo clutter on the face
+const SHORT_LABEL: Record<string, string> = {
+  pulse: "PULSE",
+  rail: "RAIL",
+  missile: "MISS",
+};
+
 export default function WeaponPanel() {
   const { activeWeapon, cooldowns, ammo, setActiveWeapon } = useWeaponsStore();
 
   const currentCooldown = cooldowns[activeWeapon] ?? 0;
-  const canFire = currentCooldown <= 0 && (ammo[activeWeapon] ?? 1) > 0;
+  const currentAmmo = ammo[activeWeapon];
+  const canFire =
+    currentCooldown <= 0 &&
+    (typeof currentAmmo === "number" ? currentAmmo > 0 : true);
 
   return (
     <div
       style={{
-        // Standardized 30% opacity
+        display: "flex",
+        alignItems: "center",
+        gap: "4px",
         background: "rgba(0,0,0,0.3)",
         backdropFilter: "blur(8px)",
         border: "1px solid rgba(0,200,255,0.5)",
         borderRadius: "8px",
-        padding: "8px 12px",
-        boxShadow: "0 0 16px rgba(0,200,255,0.1)",
+        padding: "4px 6px",
+        boxShadow: "0 0 12px rgba(0,200,255,0.1)",
+        // Constrained to not bleed into joystick zones
+        maxWidth: "280px",
+        width: "100%",
       }}
       data-ocid="weapons.panel"
     >
-      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-        {/* Weapon selector */}
+      {/* Weapon tab selector — nav-bar style */}
+      <div
+        style={{
+          display: "flex",
+          flex: 1,
+          gap: "2px",
+          maxWidth: "180px",
+        }}
+      >
         {WEAPONS.map((w) => {
           const isActive = w.id === activeWeapon;
           const cd = cooldowns[w.id] ?? 0;
-          const a = ammo[w.id];
-          const ammoDisplay = typeof a === "number" ? a : "∞";
+          const label = SHORT_LABEL[w.id] ?? w.id.toUpperCase().slice(0, 4);
 
           return (
             <button
@@ -37,52 +58,72 @@ export default function WeaponPanel() {
               onClick={() => setActiveWeapon(w.id as WeaponId)}
               data-ocid={`weapons.${w.id}_button`}
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "8px 12px",
-                minHeight: "48px",
-                borderRadius: "6px",
+                flex: 1,
+                position: "relative",
+                padding: "4px 6px",
+                minHeight: "36px",
+                minWidth: 0,
+                borderRadius: "5px",
                 border: isActive
-                  ? "1px solid rgba(0,200,255,1.0)"
-                  : "1px solid rgba(0,200,255,0.3)",
+                  ? "1px solid rgba(0,200,255,0.9)"
+                  : "1px solid rgba(0,200,255,0.2)",
                 background: isActive
-                  ? "rgba(0,200,255,0.12)"
-                  : "rgba(255,255,255,0.04)",
-                // Primary white when active, 70% white when not
-                color: isActive ? "#00ccff" : "rgba(255,255,255,0.7)",
+                  ? "rgba(0,200,255,0.15)"
+                  : "rgba(255,255,255,0.03)",
+                color: isActive ? "#00ccff" : "rgba(255,255,255,0.6)",
                 fontFamily: "monospace",
-                fontSize: "11px",
+                fontSize: "9px",
                 fontWeight: "bold",
-                letterSpacing: "0.12em",
+                letterSpacing: "0.1em",
                 textTransform: "uppercase",
                 cursor: "pointer",
-                whiteSpace: "nowrap",
-                // 150ms interactive
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "2px",
                 transition: "all 150ms ease",
-                textShadow: isActive ? "0 0 8px rgba(0,200,255,0.7)" : "none",
+                textShadow: isActive ? "0 0 6px rgba(0,200,255,0.7)" : "none",
+                overflow: "hidden",
               }}
             >
+              {/* dot indicator */}
               <span
                 style={{
-                  width: "8px",
-                  height: "8px",
+                  width: "5px",
+                  height: "5px",
                   borderRadius: "50%",
                   flexShrink: 0,
-                  backgroundColor: w.color,
-                  boxShadow: isActive ? `0 0 6px ${w.color}` : "none",
+                  backgroundColor: isActive ? w.color : "rgba(255,255,255,0.3)",
+                  boxShadow: isActive ? `0 0 4px ${w.color}` : "none",
                 }}
               />
-              <span>{w.label}</span>
-              <span style={{ fontSize: "10px", opacity: 0.7 }}>
-                ▸{ammoDisplay}
-              </span>
+              <span>{label}</span>
+              {/* animated underline — matches top nav style */}
+              <span
+                style={{
+                  position: "absolute",
+                  bottom: "3px",
+                  left: "6px",
+                  right: "6px",
+                  height: "1.5px",
+                  background: "#00ccff",
+                  borderRadius: "1px",
+                  transform: isActive ? "scaleX(1)" : "scaleX(0)",
+                  transition: "transform 150ms ease",
+                  transformOrigin: "center",
+                  boxShadow: isActive ? "0 0 4px rgba(0,200,255,0.9)" : "none",
+                }}
+              />
               {cd > 0 && isActive && (
                 <span
                   style={{
-                    fontSize: "10px",
+                    position: "absolute",
+                    top: "2px",
+                    right: "3px",
+                    fontSize: "7px",
                     color: "#ffaa00",
-                    marginLeft: "2px",
+                    lineHeight: 1,
                   }}
                 >
                   CD
@@ -91,48 +132,47 @@ export default function WeaponPanel() {
             </button>
           );
         })}
-
-        {/* Divider */}
-        <div
-          style={{
-            width: "1px",
-            height: "32px",
-            background: "rgba(0,200,255,0.3)",
-          }}
-        />
-
-        {/* FIRE button */}
-        <button
-          type="button"
-          onClick={handleFireButton}
-          disabled={!canFire}
-          data-ocid="weapons.fire_button"
-          style={{
-            padding: "8px 20px",
-            minHeight: "48px",
-            borderRadius: "6px",
-            border: canFire
-              ? "2px solid rgba(255,60,60,1.0)"
-              : "2px solid rgba(100,100,100,0.5)",
-            background: canFire
-              ? "rgba(255,50,50,0.25)"
-              : "rgba(100,100,100,0.15)",
-            color: canFire ? "#ff6666" : "rgba(100,100,100,0.6)",
-            fontFamily: "monospace",
-            fontSize: "13px",
-            fontWeight: "bold",
-            letterSpacing: "0.2em",
-            textTransform: "uppercase",
-            cursor: canFire ? "pointer" : "not-allowed",
-            // 150ms interactive
-            transition: "all 150ms ease",
-            textShadow: canFire ? "0 0 10px rgba(255,80,80,0.8)" : "none",
-            boxShadow: canFire ? "0 0 14px rgba(255,60,60,0.3)" : "none",
-          }}
-        >
-          FIRE
-        </button>
       </div>
+
+      {/* Divider */}
+      <div
+        style={{
+          width: "1px",
+          height: "28px",
+          background: "rgba(0,200,255,0.25)",
+          flexShrink: 0,
+        }}
+      />
+
+      {/* FIRE button */}
+      <button
+        type="button"
+        onClick={handleFireButton}
+        disabled={!canFire}
+        data-ocid="weapons.fire_button"
+        style={{
+          padding: "4px 14px",
+          minHeight: "36px",
+          flexShrink: 0,
+          borderRadius: "5px",
+          border: canFire
+            ? "1px solid rgba(255,60,60,0.9)"
+            : "1px solid rgba(100,100,100,0.4)",
+          background: canFire ? "rgba(255,50,50,0.2)" : "rgba(100,100,100,0.1)",
+          color: canFire ? "#ff6666" : "rgba(100,100,100,0.5)",
+          fontFamily: "monospace",
+          fontSize: "11px",
+          fontWeight: "bold",
+          letterSpacing: "0.2em",
+          textTransform: "uppercase",
+          cursor: canFire ? "pointer" : "not-allowed",
+          transition: "all 150ms ease",
+          textShadow: canFire ? "0 0 8px rgba(255,80,80,0.8)" : "none",
+          boxShadow: canFire ? "0 0 10px rgba(255,60,60,0.25)" : "none",
+        }}
+      >
+        FIRE
+      </button>
     </div>
   );
 }

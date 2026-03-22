@@ -20,9 +20,6 @@ import NotificationSystem from "./NotificationSystem";
 import WeaponPanel from "./WeaponPanel";
 
 // ─── TOP NAVIGATION BAR ─────────────────────────────────────────────────────────
-// FREE ROAM | ORBITAL | COMBAT  |  NAV | SCAN | COMM
-// 60px from top edge, 30% opacity dark bg, min 48px tap targets
-
 const CAMERA_MODES = [
   { id: "freeRoam" as const, label: "FREE ROAM" },
   { id: "orbital" as const, label: "ORBITAL" },
@@ -56,7 +53,6 @@ function TopNavBar() {
     justifyContent: "center",
     gap: "4px",
     position: "relative",
-    // Interactive feedback: 150ms
     transition: "color 150ms ease, text-shadow 150ms ease",
   };
 
@@ -64,7 +60,7 @@ function TopNavBar() {
     <div
       style={{
         position: "fixed",
-        top: "60px",
+        top: 0,
         left: "50%",
         transform: "translateX(-50%)",
         zIndex: 40,
@@ -75,14 +71,14 @@ function TopNavBar() {
         style={{
           background: "rgba(0,0,0,0.3)",
           border: "1px solid rgba(0,200,255,0.5)",
-          borderRadius: "8px",
+          borderTop: "none",
+          borderRadius: "0 0 8px 8px",
           backdropFilter: "blur(8px)",
           boxShadow: "0 0 20px rgba(0,200,255,0.1)",
           display: "flex",
           alignItems: "stretch",
         }}
       >
-        {/* Camera mode buttons */}
         {CAMERA_MODES.map(({ id, label }) => {
           const isActive = mode === id;
           return (
@@ -98,7 +94,6 @@ function TopNavBar() {
               }}
             >
               <span>{label}</span>
-              {/* Animated underline — scaleX slides in on active (150ms) */}
               <span
                 style={{
                   position: "absolute",
@@ -118,7 +113,6 @@ function TopNavBar() {
           );
         })}
 
-        {/* Separator */}
         <div
           style={{
             width: "1px",
@@ -128,7 +122,6 @@ function TopNavBar() {
           }}
         />
 
-        {/* Menu panel tabs */}
         {MENU_TABS.map(({ id, label }) => {
           const isOpen = activePanel === id;
           return (
@@ -168,8 +161,6 @@ function TopNavBar() {
 }
 
 // ─── UNIFIED TOP-LEFT PANEL ───────────────────────────────────────────────────
-// Lane indicator + Status bars merged into one 30%-opacity panel
-
 function StatBar({
   label,
   value,
@@ -218,7 +209,6 @@ function StatBar({
             width: `${pct}%`,
             background: barColor,
             borderRadius: "2px",
-            // Resource bar value changes: 500ms with glow pulse
             transition: "width 500ms ease, background 500ms ease",
             boxShadow: `0 0 6px ${barColor}80`,
           }}
@@ -248,7 +238,7 @@ function UnifiedTopLeftPanel() {
   return (
     <div
       className="absolute pointer-events-auto"
-      style={{ top: "12px", left: "12px", zIndex: 20 }}
+      style={{ top: "60px", left: "12px", zIndex: 20 }}
     >
       <div
         style={{
@@ -265,7 +255,6 @@ function UnifiedTopLeftPanel() {
           minWidth: "130px",
         }}
       >
-        {/* Lane row */}
         <div
           style={{
             display: "flex",
@@ -349,8 +338,6 @@ function UnifiedTopLeftPanel() {
             Q/E
           </span>
         </div>
-
-        {/* Status bars */}
         <StatBar label="HULL" value={hull} max={maxHull} />
         <StatBar label="O2" value={oxygen} max={100} />
         <StatBar label="PWR" value={power} max={100} />
@@ -361,7 +348,6 @@ function UnifiedTopLeftPanel() {
 }
 
 // ─── LOCKED INDICATOR ─────────────────────────────────────────────────────────
-
 function LockedIndicator() {
   const lockedTarget = useEnemyStore((s) => s.lockedTarget);
   const enemies = useEnemyStore((s) => s.enemies);
@@ -402,7 +388,6 @@ function LockedIndicator() {
 }
 
 // ─── COMBAT RETICLE ───────────────────────────────────────────────────────────
-
 function CombatReticle() {
   const mode = useCameraStore((s) => s.mode);
   const lockedTarget = useEnemyStore((s) => s.lockedTarget);
@@ -480,7 +465,6 @@ function CombatReticle() {
 }
 
 // ─── LEAD INDICATOR ───────────────────────────────────────────────────────────
-
 function LeadIndicator() {
   const mode = useCameraStore((s) => s.mode);
   const lockedTarget = useEnemyStore((s) => s.lockedTarget);
@@ -506,7 +490,6 @@ function LeadIndicator() {
 }
 
 // ─── MISSILE LOCK BAR ─────────────────────────────────────────────────────────
-
 function MissileLockBar() {
   const mode = useCameraStore((s) => s.mode);
   const activeWeapon = useWeaponsStore((s) => s.activeWeapon);
@@ -561,7 +544,6 @@ function MissileLockBar() {
 }
 
 // ─── FREE ROAM HUD ────────────────────────────────────────────────────────────
-
 function FreeRoamHUD() {
   const mode = useCameraStore((s) => s.mode);
   const fuel = useShipStore((s) => s.fuel);
@@ -677,8 +659,6 @@ function FreeRoamHUD() {
 }
 
 // ─── BOTTOM TAB BAR ─────────────────────────────────────────────────────────────
-// SHIP / CARGO / NAV / SCAN / COMM — standardized 30% opacity
-
 const ALL_BOTTOM_TABS = [
   { id: "ship" as const, label: "SHIP" },
   { id: "cargo" as const, label: "CARGO" },
@@ -723,7 +703,6 @@ function BottomTabBar() {
                 padding: "8px 14px",
                 minHeight: "48px",
                 background: isActive ? "rgba(0,200,255,0.12)" : "transparent",
-                // Primary cyan when active, 70% white when inactive
                 color: isActive ? "#00ccff" : "rgba(255,255,255,0.7)",
                 border: "none",
                 borderRight:
@@ -731,7 +710,6 @@ function BottomTabBar() {
                     ? "1px solid rgba(0,200,255,0.2)"
                     : "none",
                 cursor: "pointer",
-                // Interactive: 150ms
                 transition: "color 150ms ease, background 150ms ease",
                 textShadow: isActive ? "0 0 8px rgba(0,200,255,0.7)" : "none",
               }}
@@ -746,42 +724,55 @@ function BottomTabBar() {
 }
 
 // ─── BOTTOM DOCK ──────────────────────────────────────────────────────────────
+// WeaponPanel is centered between the two joysticks.
+// MechLogPanel floats independently (not in the same flex row).
 
 function BottomDock() {
   const mode = useCameraStore((s) => s.mode);
   const isCombat = mode === "combat";
 
   return (
-    <div
-      className="fixed bottom-0 left-0 right-0 pointer-events-none"
-      style={{ zIndex: 30 }}
-    >
+    <>
+      {/*
+       * Weapon panel — centered at bottom, constrained to the middle zone
+       * between the joysticks (~220px wide max).
+       * z-30 sits above cockpit (z-10) but below MobileControls (z-50).
+       */}
       <div
-        className="mx-auto flex items-end justify-center gap-3 px-4 pb-2"
-        style={{ maxWidth: 700 }}
+        style={{
+          position: "fixed",
+          bottom: "16px",
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 30,
+          pointerEvents: isCombat ? "auto" : "none",
+          opacity: isCombat ? 1 : 0,
+          // shift up a bit so it clears the bottom edge
+          translate: isCombat ? "none" : "0 12px",
+          transition: "opacity 300ms ease-out, translate 300ms ease-out",
+        }}
       >
-        {/* WeaponPanel — 300ms ease-out show/hide */}
-        <div
-          className="pointer-events-auto flex-1"
-          style={{
-            opacity: isCombat ? 1 : 0,
-            transform: isCombat ? "translateY(0)" : "translateY(12px)",
-            transition: "opacity 300ms ease-out, transform 300ms ease-out",
-            pointerEvents: isCombat ? "auto" : "none",
-          }}
-        >
-          <WeaponPanel />
-        </div>
-        <div className="pointer-events-auto">
-          <MechLogPanel />
-        </div>
+        <WeaponPanel />
       </div>
-    </div>
+
+      {/* MechLogPanel — floats above the dock, independent of WeaponPanel */}
+      <div
+        style={{
+          position: "fixed",
+          bottom: "72px",
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 30,
+          pointerEvents: "auto",
+        }}
+      >
+        <MechLogPanel />
+      </div>
+    </>
   );
 }
 
 // ─── HUD ROOT ─────────────────────────────────────────────────────────────────
-
 interface HUDProps {
   targetId?: string | null;
   targetDistance?: number;
@@ -811,46 +802,30 @@ export default function HUD(_props: HUDProps) {
 
   return (
     <>
-      {/* Combat log watcher — pure side-effects, no render */}
       <CombatLogWatcher />
-
-      {/*
-       * TOP NAV BAR — replaces ViewToggle + WaveIndicator
-       * "STORY MODE" badge and "CHAPTER 2" indicator removed (WaveIndicator not rendered)
-       */}
       <TopNavBar />
 
-      {/* Layer 1 — cockpit frame (z-10) */}
+      {/* Layer 1 — cockpit frame */}
       <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 10 }}>
         <CockpitView />
         <div className="scanlines absolute inset-0 pointer-events-none" />
       </div>
 
-      {/* Layer 2 — HUD panels (z-20) */}
+      {/* Layer 2 — HUD panels */}
       <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 20 }}>
-        {/* Unified top-left: lane + status bars (was two separate panels) */}
         <UnifiedTopLeftPanel />
         {isCombat && <AimCone />}
         {isCombat && <CombatReticle />}
         {isCombat && <LeadIndicator />}
         {isCombat && <MissileLockBar />}
         <FreeRoamHUD />
-        {/*
-         * RadarMinimap intentionally NOT rendered — code preserved in
-         * src/components/UI/RadarMinimap.tsx for future use.
-         * Bottom-right quadrant is now fully clear.
-         */}
         <LockedIndicator />
         <FPSCounter />
         <MiningAlert />
         <NotificationSystem />
       </div>
 
-      {/* Layer 3 — bottom tab bar + dock (z-30) */}
-      {/*
-       * CombatLog moved into COMM panel — access via TopNavBar COMM tab
-       * or BottomTabBar COMM button.
-       */}
+      {/* Layer 3 — bottom controls */}
       <BottomTabBar />
       <BottomDock />
     </>

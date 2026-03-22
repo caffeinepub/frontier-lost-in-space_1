@@ -70,12 +70,17 @@ interface CameraOrbitControllerProps {
   keysDown: React.MutableRefObject<Set<string>>;
 }
 
-const ORBITAL_RADIUS_OFFSET = 2.2;
-const ORBITAL_HEIGHT_PHI = 0.35;
+// Camera sits this many units above the lane plane in orbital mode
+const ORBITAL_HEIGHT = 0.6;
+// How far behind the ship the camera sits in combat mode (in orbit-angle radians)
+const COMBAT_BEHIND_ANGLE = 0.18;
+// Camera rides slightly outside the lane ring
+const ORBITAL_PULL_BACK = 0.5;
 const COCKPIT_Z = 2.0;
 const COCKPIT_Y = 0.22;
-const COMBAT_ORBIT_RADIUS = 2.2;
 const FREE_ROAM_SPEED = 1.5;
+// Combat camera height above the lane plane
+const COMBAT_HEIGHT = 0.28;
 
 function CameraOrbitController({
   thetaRef,
@@ -90,24 +95,31 @@ function CameraOrbitController({
     const state = useCameraStore.getState();
     const cameraMode = state.mode;
 
+    // ── COMBAT: rail-shooter ───────────────────────────────────────────────
+    // Camera sits slightly behind the ship on its lane ring and looks toward
+    // Earth (plus aim offset). The globe visually "flies past" the player.
     if (cameraMode === "combat") {
       const laneRadius = useLaneStore.getState().getCurrentRadius();
-      thetaRef.current += delta * 0.03;
+
+      // Advance orbit angle
+      thetaRef.current += delta * 0.04;
       const theta = thetaRef.current;
 
-      const orbitX = Math.sin(theta) * laneRadius;
-      const orbitZ = Math.cos(theta) * laneRadius;
+      // Camera is slightly behind ship on the lane orbit
+      const camAngle = theta - COMBAT_BEHIND_ANGLE;
+      const camRadius = laneRadius + ORBITAL_PULL_BACK;
 
-      const camX =
-        orbitX * (COMBAT_ORBIT_RADIUS / laneRadius + 1) * 0.12 + orbitX;
-      const camY = COCKPIT_Y + 0.1;
-      const camZ =
-        orbitZ * (COMBAT_ORBIT_RADIUS / laneRadius + 1) * 0.12 + orbitZ;
+      const targetX = Math.sin(camAngle) * camRadius;
+      const targetY = COMBAT_HEIGHT;
+      const targetZ = Math.cos(camAngle) * camRadius;
 
-      const lerpSpeed = 4.0 * delta;
-      currentPosRef.current.x += (camX - currentPosRef.current.x) * lerpSpeed;
-      currentPosRef.current.y += (camY - currentPosRef.current.y) * lerpSpeed;
-      currentPosRef.current.z += (camZ - currentPosRef.current.z) * lerpSpeed;
+      const lerpSpeed = 5.0 * delta;
+      currentPosRef.current.x +=
+        (targetX - currentPosRef.current.x) * lerpSpeed;
+      currentPosRef.current.y +=
+        (targetY - currentPosRef.current.y) * lerpSpeed;
+      currentPosRef.current.z +=
+        (targetZ - currentPosRef.current.z) * lerpSpeed;
 
       camera.position.set(
         currentPosRef.current.x,
@@ -115,22 +127,32 @@ function CameraOrbitController({
         currentPosRef.current.z,
       );
 
+      // Look toward Earth center with aim offset applied
       const aimPitch = state.aimPitch;
       const aimYaw = state.aimYaw;
-      const lookDir = new THREE.Vector3(
-        Math.sin(aimYaw),
-        Math.sin(aimPitch),
-        -Math.cos(aimYaw),
-      );
+
+      // Forward direction from camera toward Earth
+      const toEarth = new THREE.Vector3(
+        -currentPosRef.current.x,
+        -currentPosRef.current.y,
+        -currentPosRef.current.z,
+      ).normalize();
+
+      // Build a right vector (tangent to orbit)
+      const up = new THREE.Vector3(0, 1, 0);
+      const right = new THREE.Vector3().crossVectors(toEarth, up).normalize();
+
+      // Apply aim offsets to the look target (2 units ahead)
       const lookTarget = new THREE.Vector3(
-        currentPosRef.current.x + lookDir.x,
-        currentPosRef.current.y + lookDir.y,
-        currentPosRef.current.z + lookDir.z - 2,
+        0 + right.x * Math.tan(aimYaw) * 1.5,
+        Math.tan(aimPitch) * 1.5,
+        0 + right.z * Math.tan(aimYaw) * 1.5,
       );
       camera.lookAt(lookTarget);
       return;
     }
 
+    // ── FREE ROAM ─────────────────────────────────────────────────────────
     if (cameraMode === "freeRoam") {
       const yaw = state.freeRoamYaw;
       const pitch = state.freeRoamPitch;
@@ -158,7 +180,6 @@ function CameraOrbitController({
       }
 
       useCameraStore.getState().setFreeRoamPos(pos);
-
       camera.position.set(pos.x, pos.y, pos.z);
       camera.rotation.order = "YXZ";
       camera.rotation.y = yaw;
@@ -166,17 +187,21 @@ function CameraOrbitController({
       return;
     }
 
-    // Orbital mode
+    // ── ORBITAL: lane-locked ring ──────────────────────────────────────────
+    // Camera orbits at laneRadius + ORBITAL_PULL_BACK from Earth center.
+    // User can drag to change the viewing angle (phi = elevation, theta = azimuth).
+    // This creates the classic "globe rotating past you" rail sensation.
     const laneRadius = useLaneStore.getState().getCurrentRadius();
-    const RADIUS = laneRadius + ORBITAL_RADIUS_OFFSET;
+    const RADIUS = laneRadius + ORBITAL_PULL_BACK;
 
     if (!isDragging.current) {
-      thetaRef.current += delta * 0.03;
+      thetaRef.current += delta * 0.025; // slow auto-drift
     }
     const theta = thetaRef.current;
-    const phi = Math.max(-0.3, Math.min(0.8, phiRef.current));
+    const phi = Math.max(-0.2, Math.min(0.6, phiRef.current));
+
     const targetX = RADIUS * Math.cos(phi) * Math.cos(theta);
-    const targetY = RADIUS * Math.sin(phi) + ORBITAL_HEIGHT_PHI;
+    const targetY = RADIUS * Math.sin(phi) + ORBITAL_HEIGHT;
     const targetZ = RADIUS * Math.cos(phi) * Math.sin(theta);
 
     const lerpSpeed = 3.0 * delta;
@@ -189,9 +214,11 @@ function CameraOrbitController({
       currentPosRef.current.y,
       currentPosRef.current.z,
     );
+    // Always look at Earth center
     camera.lookAt(0, 0, 0);
   });
 
+  // Fallback: if somehow mode is unknown, drift back to cockpit position
   useFrame((_, delta) => {
     const cameraMode = useCameraStore.getState().mode;
     if (
@@ -243,6 +270,7 @@ export default function GameCanvas() {
     };
   }, []);
 
+  // Combat: mouse moves the aim reticle
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
       const mode = useCameraStore.getState().mode;
@@ -257,6 +285,7 @@ export default function GameCanvas() {
     return () => window.removeEventListener("mousemove", onMouseMove);
   }, []);
 
+  // Free roam: mouse rotates the camera
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
       const mode = useCameraStore.getState().mode;
