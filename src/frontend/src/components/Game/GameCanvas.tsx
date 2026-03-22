@@ -9,10 +9,12 @@ import { useProjectileStore } from "../../stores/useProjectileStore";
 import type { ProjectileData } from "../../stores/useProjectileStore";
 import { useWeaponsStore } from "../../stores/useWeaponsStore";
 import { CombatTargetingSystem } from "../Combat/CombatTargetingSystem";
+import { EnemyLabels } from "../Combat/EnemyLabels";
 import { EnemyLayer } from "../Combat/EnemyLayer";
 import { Explosion } from "../Combat/Explosion";
 import { Projectile } from "../Combat/Projectile";
 import CraftingPanel from "../Crafting/CraftingPanel";
+import { AmbientUniverse } from "../Environment/AmbientUniverse";
 import AsteroidField from "../Environment/AsteroidField";
 import DerelictShips from "../Environment/DerelictShips";
 import { EarthGlobe } from "../Environment/EarthGlobe";
@@ -308,7 +310,7 @@ export default function GameCanvas() {
       <Canvas
         camera={{ fov: 55, near: 0.05, far: 1000, position: [0, 0.5, 5.0] }}
         gl={{ antialias: true, alpha: false }}
-        style={{ background: "#081626" }}
+        style={{ background: "#050d1a" }}
       >
         {/* Lighting */}
         <ambientLight intensity={0.4} />
@@ -341,6 +343,7 @@ export default function GameCanvas() {
         <CombatTargetingSystem />
 
         <StarField />
+        <AmbientUniverse />
 
         <group position={[0, 0, 0]}>
           <EarthGlobe />
@@ -352,6 +355,7 @@ export default function GameCanvas() {
         <MiningLaser targetId={targetId} targetDistance={targetDistance} />
 
         <EnemyLayer />
+        <EnemyLabels />
         <ProjectileLayer />
         <ExplosionLayer />
 

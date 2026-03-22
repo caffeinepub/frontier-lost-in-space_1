@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useSwipeControls } from "../../hooks/useSwipeControls";
 import { useCameraStore } from "../../stores/cameraStore";
 import { useInventoryStore } from "../../stores/inventoryStore";
+import { useLaneStore } from "../../stores/laneStore";
 import { useMenuStore } from "../../stores/menuStore";
 import { useShipStore } from "../../stores/shipStore";
 import { useEnemyStore } from "../../stores/useEnemyStore";
@@ -12,130 +13,354 @@ import { RESOURCES } from "../../utils/constants";
 import { CockpitView } from "../game/CockpitView";
 import { FPSCounter } from "../ui/FPSCounter";
 import { AimCone } from "./AimCone";
-import { LaneIndicator } from "./LaneIndicator";
+import { CombatLogWatcher } from "./CombatLog";
 import { MechLogPanel } from "./MechLogPanel";
 import MiningAlert from "./MiningAlert";
 import NotificationSystem from "./NotificationSystem";
-import RadarMinimap from "./RadarMinimap";
-import StatusPanel from "./StatusPanel";
-import { WaveIndicator } from "./WaveIndicator";
 import WeaponPanel from "./WeaponPanel";
 
-/** Large, obvious view mode toggle — 3 modes */
-function ViewToggle() {
+// ─── TOP NAVIGATION BAR ─────────────────────────────────────────────────────────
+// FREE ROAM | ORBITAL | COMBAT  |  NAV | SCAN | COMM
+// 60px from top edge, 30% opacity dark bg, min 48px tap targets
+
+const CAMERA_MODES = [
+  { id: "freeRoam" as const, label: "FREE ROAM" },
+  { id: "orbital" as const, label: "ORBITAL" },
+  { id: "combat" as const, label: "COMBAT" },
+] as const;
+
+const MENU_TABS = [
+  { id: "nav" as const, label: "NAV" },
+  { id: "scan" as const, label: "SCAN" },
+  { id: "comm" as const, label: "COMM" },
+] as const;
+
+function TopNavBar() {
   const { mode, setMode } = useCameraStore();
+  const { activePanel, togglePanel } = useMenuStore();
 
-  const cycleMode = () => {
-    if (mode === "orbital") setMode("combat");
-    else if (mode === "combat") setMode("freeRoam");
-    else setMode("orbital");
+  const btnBase: React.CSSProperties = {
+    fontFamily: "monospace",
+    fontSize: "11px",
+    fontWeight: "bold",
+    letterSpacing: "0.18em",
+    textTransform: "uppercase",
+    background: "transparent",
+    border: "none",
+    cursor: "pointer",
+    padding: "0 14px",
+    minHeight: "48px",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "4px",
+    position: "relative",
+    // Interactive feedback: 150ms
+    transition: "color 150ms ease, text-shadow 150ms ease",
   };
-
-  const config = {
-    orbital: {
-      icon: "🌍",
-      label: "ORBITAL",
-      color: "#00ccff",
-      border: "rgba(0,200,255,0.7)",
-      shadow: "0 0 18px rgba(0,200,255,0.35)",
-    },
-    combat: {
-      icon: "🎯",
-      label: "COMBAT",
-      color: "#ffaa00",
-      border: "rgba(255,160,0,0.7)",
-      shadow: "0 0 18px rgba(255,160,0,0.35)",
-    },
-    freeRoam: {
-      icon: "🚀",
-      label: "FREE ROAM",
-      color: "#00ff88",
-      border: "rgba(0,255,136,0.7)",
-      shadow: "0 0 18px rgba(0,255,136,0.35)",
-    },
-  };
-
-  const c = config[mode];
 
   return (
     <div
-      className="fixed top-3 left-1/2 -translate-x-1/2 pointer-events-auto"
-      style={{ zIndex: 40 }}
+      style={{
+        position: "fixed",
+        top: "60px",
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 40,
+        pointerEvents: "auto",
+      }}
     >
-      <button
-        type="button"
-        onClick={cycleMode}
+      <div
         style={{
-          background: "rgba(0,0,0,0.82)",
-          border: `2px solid ${c.border}`,
-          borderRadius: "12px",
-          padding: "8px 22px",
+          background: "rgba(0,0,0,0.3)",
+          border: "1px solid rgba(0,200,255,0.5)",
+          borderRadius: "8px",
+          backdropFilter: "blur(8px)",
+          boxShadow: "0 0 20px rgba(0,200,255,0.1)",
           display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: "2px",
-          boxShadow: c.shadow,
-          backdropFilter: "blur(6px)",
-          minWidth: "140px",
-          cursor: "pointer",
-          transition: "all 0.25s ease",
+          alignItems: "stretch",
         }}
-        data-ocid="hud.view_toggle"
       >
-        <span style={{ fontSize: "18px", lineHeight: 1 }}>{c.icon}</span>
-        <span
+        {/* Camera mode buttons */}
+        {CAMERA_MODES.map(({ id, label }) => {
+          const isActive = mode === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setMode(id)}
+              data-ocid={`nav.${id}`}
+              style={{
+                ...btnBase,
+                color: isActive ? "#00ccff" : "rgba(255,255,255,0.7)",
+                textShadow: isActive ? "0 0 10px rgba(0,200,255,0.8)" : "none",
+              }}
+            >
+              <span>{label}</span>
+              {/* Animated underline — scaleX slides in on active (150ms) */}
+              <span
+                style={{
+                  position: "absolute",
+                  bottom: "8px",
+                  left: "14px",
+                  right: "14px",
+                  height: "2px",
+                  background: "#00ccff",
+                  borderRadius: "1px",
+                  transform: isActive ? "scaleX(1)" : "scaleX(0)",
+                  transition: "transform 150ms ease",
+                  transformOrigin: "center",
+                  boxShadow: isActive ? "0 0 6px rgba(0,200,255,0.9)" : "none",
+                }}
+              />
+            </button>
+          );
+        })}
+
+        {/* Separator */}
+        <div
           style={{
-            fontFamily: "monospace",
-            fontSize: "13px",
-            fontWeight: "bold",
-            letterSpacing: "0.2em",
-            color: c.color,
-            textShadow: `0 0 8px ${c.color}cc`,
+            width: "1px",
+            background: "rgba(0,200,255,0.3)",
+            margin: "10px 2px",
+            flexShrink: 0,
           }}
-        >
-          {c.label}
-        </span>
-        <span
-          style={{
-            fontFamily: "monospace",
-            fontSize: "9px",
-            color: "rgba(255,255,255,0.4)",
-            letterSpacing: "0.1em",
-          }}
-        >
-          Tap to switch
-        </span>
-      </button>
+        />
+
+        {/* Menu panel tabs */}
+        {MENU_TABS.map(({ id, label }) => {
+          const isOpen = activePanel === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => togglePanel(id)}
+              data-ocid={`nav.${id}`}
+              style={{
+                ...btnBase,
+                color: isOpen ? "#00ccff" : "rgba(255,255,255,0.7)",
+                textShadow: isOpen ? "0 0 10px rgba(0,200,255,0.8)" : "none",
+              }}
+            >
+              <span>{label}</span>
+              <span
+                style={{
+                  position: "absolute",
+                  bottom: "8px",
+                  left: "14px",
+                  right: "14px",
+                  height: "2px",
+                  background: "#00ccff",
+                  borderRadius: "1px",
+                  transform: isOpen ? "scaleX(1)" : "scaleX(0)",
+                  transition: "transform 150ms ease",
+                  transformOrigin: "center",
+                  boxShadow: isOpen ? "0 0 6px rgba(0,200,255,0.9)" : "none",
+                }}
+              />
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
-/** SCAN + CMD buttons — ORBITAL only, no story triggers */
-function ScanCmdButtons() {
-  const mode = useCameraStore((s) => s.mode);
-  if (mode !== "orbital") return null;
+// ─── UNIFIED TOP-LEFT PANEL ───────────────────────────────────────────────────
+// Lane indicator + Status bars merged into one 30%-opacity panel
+
+function StatBar({
+  label,
+  value,
+  max = 100,
+}: { label: string; value: number; max?: number }) {
+  const pct = Math.max(0, Math.min(100, (value / max) * 100));
+  let barColor = "#00ccff";
+  if (label === "HULL")
+    barColor = pct > 60 ? "#00ff88" : pct > 30 ? "#ffaa00" : "#ff4444";
+  else if (label === "O2")
+    barColor = pct > 60 ? "#00e5ff" : pct > 30 ? "#ffaa00" : "#ff4444";
+  else if (label === "PWR")
+    barColor = pct > 60 ? "#ffe066" : pct > 30 ? "#ffaa00" : "#ff4444";
+  else if (label === "FUEL")
+    barColor = pct > 50 ? "#00ccff" : pct > 25 ? "#ffaa00" : "#ff4444";
 
   return (
-    <div className="absolute top-8 right-52 flex gap-2 pointer-events-auto">
-      <button
-        type="button"
-        onClick={() => console.log("SCAN")}
-        className="bg-black/70 border border-cyan-500/50 hover:border-cyan-400 hover:bg-cyan-500/10 text-cyan-400 text-[10px] font-mono tracking-widest uppercase px-3 py-1.5 rounded transition-all"
-        data-ocid="hud.scan_button"
+    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+      <span
+        style={{
+          fontFamily: "monospace",
+          fontSize: "8px",
+          color: "rgba(255,255,255,0.7)",
+          letterSpacing: "0.12em",
+          width: "30px",
+          textAlign: "right",
+          flexShrink: 0,
+        }}
       >
-        SCAN
-      </button>
-      <button
-        type="button"
-        onClick={() => console.log("CMD")}
-        className="bg-black/70 border border-cyan-500/50 hover:border-cyan-400 hover:bg-cyan-500/10 text-cyan-400 text-[10px] font-mono tracking-widest uppercase px-3 py-1.5 rounded transition-all"
-        data-ocid="hud.cmd_button"
+        {label}
+      </span>
+      <div
+        style={{
+          flex: 1,
+          height: "3px",
+          background: "rgba(255,255,255,0.08)",
+          borderRadius: "2px",
+          overflow: "hidden",
+          border: "1px solid rgba(0,200,255,0.5)",
+          minWidth: "52px",
+        }}
       >
-        CMD
-      </button>
+        <div
+          style={{
+            height: "100%",
+            width: `${pct}%`,
+            background: barColor,
+            borderRadius: "2px",
+            // Resource bar value changes: 500ms with glow pulse
+            transition: "width 500ms ease, background 500ms ease",
+            boxShadow: `0 0 6px ${barColor}80`,
+          }}
+        />
+      </div>
+      <span
+        style={{
+          fontFamily: "monospace",
+          fontSize: "8px",
+          color: barColor,
+          textShadow: `0 0 5px ${barColor}60`,
+          width: "26px",
+          flexShrink: 0,
+          transition: "color 500ms ease",
+        }}
+      >
+        {Math.round(pct)}%
+      </span>
     </div>
   );
 }
+
+function UnifiedTopLeftPanel() {
+  const { hull, maxHull, oxygen, power, fuel, maxFuel } = useShipStore();
+  const { currentLane, changeLane } = useLaneStore();
+
+  return (
+    <div
+      className="absolute pointer-events-auto"
+      style={{ top: "12px", left: "12px", zIndex: 20 }}
+    >
+      <div
+        style={{
+          background: "rgba(0,0,0,0.3)",
+          border: "1px solid rgba(0,200,255,0.5)",
+          boxShadow:
+            "0 0 14px rgba(0,200,255,0.15), inset 0 0 6px rgba(0,200,255,0.04)",
+          backdropFilter: "blur(8px)",
+          borderRadius: "6px",
+          padding: "8px 12px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "6px",
+          minWidth: "130px",
+        }}
+      >
+        {/* Lane row */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingBottom: "6px",
+            borderBottom: "1px solid rgba(0,200,255,0.2)",
+            gap: "6px",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => changeLane("down")}
+            style={{
+              fontFamily: "monospace",
+              fontSize: "11px",
+              color: "rgba(0,200,255,0.7)",
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              padding: "0 2px",
+              lineHeight: 1,
+              transition: "color 150ms ease",
+            }}
+            data-ocid="lane.down"
+          >
+            ▼
+          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+            <span
+              style={{
+                fontFamily: "monospace",
+                fontSize: "8px",
+                color: "rgba(255,255,255,0.7)",
+                letterSpacing: "0.15em",
+              }}
+            >
+              LANE
+            </span>
+            <span
+              style={{
+                fontFamily: "monospace",
+                fontSize: "16px",
+                fontWeight: "bold",
+                color: "#00e5ff",
+                textShadow:
+                  "0 0 10px rgba(0,229,255,0.9), 0 0 20px rgba(0,229,255,0.4)",
+                minWidth: "18px",
+                textAlign: "center",
+              }}
+            >
+              {currentLane}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => changeLane("up")}
+            style={{
+              fontFamily: "monospace",
+              fontSize: "11px",
+              color: "rgba(0,200,255,0.7)",
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              padding: "0 2px",
+              lineHeight: 1,
+              transition: "color 150ms ease",
+            }}
+            data-ocid="lane.up"
+          >
+            ▲
+          </button>
+          <span
+            style={{
+              fontFamily: "monospace",
+              fontSize: "8px",
+              color: "rgba(0,200,255,0.35)",
+              letterSpacing: "0.08em",
+            }}
+          >
+            Q/E
+          </span>
+        </div>
+
+        {/* Status bars */}
+        <StatBar label="HULL" value={hull} max={maxHull} />
+        <StatBar label="O2" value={oxygen} max={100} />
+        <StatBar label="PWR" value={power} max={100} />
+        <StatBar label="FUEL" value={fuel} max={maxFuel} />
+      </div>
+    </div>
+  );
+}
+
+// ─── LOCKED INDICATOR ─────────────────────────────────────────────────────────
 
 function LockedIndicator() {
   const lockedTarget = useEnemyStore((s) => s.lockedTarget);
@@ -146,7 +371,7 @@ function LockedIndicator() {
   const enemy = enemies.find((e) => e.id === lockedTarget);
   if (!enemy) return null;
 
-  const dist = enemy.distance ?? 80;
+  const dist = (enemy as { distance?: number }).distance ?? 80;
   const hpPct = enemy.hp / enemy.maxHp;
   const threat = hpPct > 0.7 ? "LOW" : hpPct > 0.3 ? "MED" : "HIGH";
   const threatColor =
@@ -176,7 +401,8 @@ function LockedIndicator() {
   );
 }
 
-/** Center crosshair reticle — color changes when target in range */
+// ─── COMBAT RETICLE ───────────────────────────────────────────────────────────
+
 function CombatReticle() {
   const mode = useCameraStore((s) => s.mode);
   const lockedTarget = useEnemyStore((s) => s.lockedTarget);
@@ -186,21 +412,18 @@ function CombatReticle() {
   if (mode !== "combat") return null;
 
   const RANGES: Record<string, number> = { pulse: 60, rail: 200, missile: 120 };
-
   let color = "rgba(255,255,255,0.5)";
   if (lockedTarget) {
     const enemy = enemies.find((e) => e.id === lockedTarget);
     if (enemy) {
-      const dist = enemy.distance ?? 80;
-      const inRange = dist <= (RANGES[activeWeapon] ?? 80);
-      color = inRange ? "#00ff88" : "#ff4444";
+      const dist = (enemy as { distance?: number }).distance ?? 80;
+      color = dist <= (RANGES[activeWeapon] ?? 80) ? "#00ff88" : "#ff4444";
     }
   }
 
   return (
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
       <div style={{ position: "relative", width: 40, height: 40 }}>
-        {/* crosshair lines */}
         <div
           style={{
             position: "absolute",
@@ -223,7 +446,6 @@ function CombatReticle() {
             opacity: 0.8,
           }}
         />
-        {/* center dot */}
         <div
           style={{
             position: "absolute",
@@ -236,62 +458,33 @@ function CombatReticle() {
             transform: "translate(-50%,-50%)",
           }}
         />
-        {/* corner brackets */}
-        <div
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            width: 8,
-            height: 8,
-            borderTop: `1px solid ${color}`,
-            borderLeft: `1px solid ${color}`,
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            top: 0,
-            right: 0,
-            width: 8,
-            height: 8,
-            borderTop: `1px solid ${color}`,
-            borderRight: `1px solid ${color}`,
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            bottom: 0,
-            left: 0,
-            width: 8,
-            height: 8,
-            borderBottom: `1px solid ${color}`,
-            borderLeft: `1px solid ${color}`,
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            bottom: 0,
-            right: 0,
-            width: 8,
-            height: 8,
-            borderBottom: `1px solid ${color}`,
-            borderRight: `1px solid ${color}`,
-          }}
-        />
+        {(["tl", "tr", "bl", "br"] as const).map((c) => (
+          <div
+            key={c}
+            style={{
+              position: "absolute",
+              ...(c.includes("t") ? { top: 0 } : { bottom: 0 }),
+              ...(c.includes("l") ? { left: 0 } : { right: 0 }),
+              width: 8,
+              height: 8,
+              borderTop: c.includes("t") ? `1px solid ${color}` : undefined,
+              borderBottom: c.includes("b") ? `1px solid ${color}` : undefined,
+              borderLeft: c.includes("l") ? `1px solid ${color}` : undefined,
+              borderRight: c.includes("r") ? `1px solid ${color}` : undefined,
+            }}
+          />
+        ))}
       </div>
     </div>
   );
 }
 
-/** Lead indicator — small marker offset from center showing estimated intercept */
+// ─── LEAD INDICATOR ───────────────────────────────────────────────────────────
+
 function LeadIndicator() {
   const mode = useCameraStore((s) => s.mode);
   const lockedTarget = useEnemyStore((s) => s.lockedTarget);
   if (mode !== "combat" || !lockedTarget) return null;
-
   return (
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
       <div style={{ position: "relative" }}>
@@ -312,18 +505,16 @@ function LeadIndicator() {
   );
 }
 
-/** Missile lock charge bar */
+// ─── MISSILE LOCK BAR ─────────────────────────────────────────────────────────
+
 function MissileLockBar() {
   const mode = useCameraStore((s) => s.mode);
   const activeWeapon = useWeaponsStore((s) => s.activeWeapon);
   const missileLocking = useWeaponsStore((s) => s.missileLocking);
   const missileLockTimer = useWeaponsStore((s) => s.missileLockTimer);
-
   if (mode !== "combat" || activeWeapon !== "missile" || !missileLocking)
     return null;
-
   const pct = Math.min((missileLockTimer / 1.5) * 100, 100);
-
   return (
     <div
       className="absolute pointer-events-none"
@@ -369,7 +560,8 @@ function MissileLockBar() {
   );
 }
 
-/** Compact Free Roam HUD — fuel, cargo, scanner */
+// ─── FREE ROAM HUD ────────────────────────────────────────────────────────────
+
 function FreeRoamHUD() {
   const mode = useCameraStore((s) => s.mode);
   const fuel = useShipStore((s) => s.fuel);
@@ -377,7 +569,6 @@ function FreeRoamHUD() {
   const maxCargo = useShipStore((s) => s.maxCargo);
   const resources = useInventoryStore((s) => s.resources);
   const totalWeight = useInventoryStore((s) => s.totalWeight);
-
   if (mode !== "freeRoam") return null;
 
   const fuelPct = Math.round((fuel / maxFuel) * 100);
@@ -403,22 +594,23 @@ function FreeRoamHUD() {
 
   return (
     <div
-      className="absolute top-16 right-3 pointer-events-none transition-opacity duration-200"
+      className="absolute top-16 right-3 pointer-events-none"
       style={{
-        background: "rgba(0,0,0,0.72)",
-        border: "1px solid rgba(0,255,136,0.35)",
-        borderRadius: "8px",
+        background: "rgba(0,0,0,0.3)",
+        border: "1px solid rgba(0,255,136,0.5)",
+        borderRadius: "6px",
+        boxShadow: "0 0 12px rgba(0,255,136,0.12)",
+        backdropFilter: "blur(8px)",
         padding: "10px 14px",
         fontFamily: "monospace",
         fontSize: "11px",
         minWidth: "170px",
-        boxShadow: "0 0 12px rgba(0,255,136,0.12)",
       }}
     >
       <div className="mb-2">
         <div className="flex justify-between mb-1">
           <span
-            style={{ color: "rgba(255,255,255,0.5)", letterSpacing: "0.15em" }}
+            style={{ color: "rgba(255,255,255,0.7)", letterSpacing: "0.15em" }}
           >
             FUEL
           </span>
@@ -426,10 +618,11 @@ function FreeRoamHUD() {
         </div>
         <div
           style={{
-            height: "4px",
-            background: "rgba(255,255,255,0.1)",
+            height: "3px",
+            background: "rgba(255,255,255,0.08)",
             borderRadius: "2px",
             overflow: "hidden",
+            border: "1px solid rgba(0,200,255,0.5)",
           }}
         >
           <div
@@ -438,7 +631,7 @@ function FreeRoamHUD() {
               width: `${fuelPct}%`,
               background: fuelColor,
               borderRadius: "2px",
-              transition: "width 0.3s ease",
+              transition: "width 500ms ease",
             }}
           />
         </div>
@@ -446,7 +639,7 @@ function FreeRoamHUD() {
       <div className="mb-2">
         <div className="flex justify-between">
           <span
-            style={{ color: "rgba(255,255,255,0.5)", letterSpacing: "0.15em" }}
+            style={{ color: "rgba(255,255,255,0.7)", letterSpacing: "0.15em" }}
           >
             CARGO
           </span>
@@ -464,7 +657,7 @@ function FreeRoamHUD() {
       >
         <div
           style={{
-            color: "rgba(255,255,255,0.5)",
+            color: "rgba(255,255,255,0.7)",
             letterSpacing: "0.15em",
             marginBottom: "3px",
           }}
@@ -472,7 +665,7 @@ function FreeRoamHUD() {
           SCANNER
         </div>
         <div
-          style={{ color: topResource ? "#00ff88" : "rgba(255,255,255,0.3)" }}
+          style={{ color: topResource ? "#00ff88" : "rgba(255,255,255,0.25)" }}
         >
           {topResource
             ? `TOP: ${topResource.label} ${topResource.amount}u`
@@ -483,47 +676,65 @@ function FreeRoamHUD() {
   );
 }
 
-const ALL_NAV_PANELS = [
-  { id: "ship" as const, label: "SHIP", orbitOnly: false },
-  { id: "cargo" as const, label: "CARGO", orbitOnly: false },
-  { id: "nav" as const, label: "NAV", orbitOnly: true },
-  { id: "scan" as const, label: "SCAN", orbitOnly: true },
-  { id: "comm" as const, label: "COMM", orbitOnly: false },
+// ─── BOTTOM TAB BAR ─────────────────────────────────────────────────────────────
+// SHIP / CARGO / NAV / SCAN / COMM — standardized 30% opacity
+
+const ALL_BOTTOM_TABS = [
+  { id: "ship" as const, label: "SHIP" },
+  { id: "cargo" as const, label: "CARGO" },
+  { id: "nav" as const, label: "NAV" },
+  { id: "scan" as const, label: "SCAN" },
+  { id: "comm" as const, label: "COMM" },
 ];
 
-function NavMenuBar() {
+function BottomTabBar() {
   const { activePanel, togglePanel } = useMenuStore();
-  const mode = useCameraStore((s) => s.mode);
-  const isOrbital = mode === "orbital";
-
-  const visiblePanels = ALL_NAV_PANELS.filter((p) => !p.orbitOnly || isOrbital);
 
   return (
     <div
-      className="fixed left-1/2 -translate-x-1/2 flex gap-2 pointer-events-auto"
+      className="fixed left-1/2 -translate-x-1/2 pointer-events-auto"
       style={{ bottom: "72px", zIndex: 30 }}
     >
       <div
-        className="flex gap-1.5 px-3 py-1.5 rounded-full"
         style={{
-          background: "rgba(0,0,0,0.55)",
+          display: "flex",
+          background: "rgba(0,0,0,0.3)",
           backdropFilter: "blur(8px)",
-          border: "1px solid rgba(0,200,255,0.2)",
+          border: "1px solid rgba(0,200,255,0.5)",
+          borderRadius: "8px",
+          overflow: "hidden",
+          boxShadow: "0 0 16px rgba(0,200,255,0.1)",
         }}
       >
-        {visiblePanels.map(({ id, label }) => {
+        {ALL_BOTTOM_TABS.map(({ id, label }, idx) => {
           const isActive = activePanel === id;
           return (
             <button
               key={id}
               type="button"
               onClick={() => togglePanel(id)}
-              className={`text-[10px] font-mono tracking-widest uppercase px-3 py-1 rounded-full transition-all ${
-                isActive
-                  ? "border border-cyan-400 bg-cyan-500/20 text-cyan-300"
-                  : "border border-transparent text-cyan-500/60 hover:text-cyan-400 hover:border-cyan-500/40"
-              }`}
-              data-ocid={`hud.${id}.tab`}
+              data-ocid={`tab.${id}`}
+              style={{
+                fontFamily: "monospace",
+                fontSize: "10px",
+                fontWeight: "bold",
+                letterSpacing: "0.18em",
+                textTransform: "uppercase",
+                padding: "8px 14px",
+                minHeight: "48px",
+                background: isActive ? "rgba(0,200,255,0.12)" : "transparent",
+                // Primary cyan when active, 70% white when inactive
+                color: isActive ? "#00ccff" : "rgba(255,255,255,0.7)",
+                border: "none",
+                borderRight:
+                  idx < ALL_BOTTOM_TABS.length - 1
+                    ? "1px solid rgba(0,200,255,0.2)"
+                    : "none",
+                cursor: "pointer",
+                // Interactive: 150ms
+                transition: "color 150ms ease, background 150ms ease",
+                textShadow: isActive ? "0 0 8px rgba(0,200,255,0.7)" : "none",
+              }}
             >
               {label}
             </button>
@@ -533,6 +744,8 @@ function NavMenuBar() {
     </div>
   );
 }
+
+// ─── BOTTOM DOCK ──────────────────────────────────────────────────────────────
 
 function BottomDock() {
   const mode = useCameraStore((s) => s.mode);
@@ -547,11 +760,18 @@ function BottomDock() {
         className="mx-auto flex items-end justify-center gap-3 px-4 pb-2"
         style={{ maxWidth: 700 }}
       >
-        {isCombat && (
-          <div className="pointer-events-auto flex-1 transition-opacity duration-200">
-            <WeaponPanel />
-          </div>
-        )}
+        {/* WeaponPanel — 300ms ease-out show/hide */}
+        <div
+          className="pointer-events-auto flex-1"
+          style={{
+            opacity: isCombat ? 1 : 0,
+            transform: isCombat ? "translateY(0)" : "translateY(12px)",
+            transition: "opacity 300ms ease-out, transform 300ms ease-out",
+            pointerEvents: isCombat ? "auto" : "none",
+          }}
+        >
+          <WeaponPanel />
+        </div>
         <div className="pointer-events-auto">
           <MechLogPanel />
         </div>
@@ -559,6 +779,8 @@ function BottomDock() {
     </div>
   );
 }
+
+// ─── HUD ROOT ─────────────────────────────────────────────────────────────────
 
 interface HUDProps {
   targetId?: string | null;
@@ -585,12 +807,18 @@ export default function HUD(_props: HUDProps) {
   }, []);
 
   const mode = useCameraStore((s) => s.mode);
-  const isOrbital = mode === "orbital";
   const isCombat = mode === "combat";
 
   return (
     <>
-      <ViewToggle />
+      {/* Combat log watcher — pure side-effects, no render */}
+      <CombatLogWatcher />
+
+      {/*
+       * TOP NAV BAR — replaces ViewToggle + WaveIndicator
+       * "STORY MODE" badge and "CHAPTER 2" indicator removed (WaveIndicator not rendered)
+       */}
+      <TopNavBar />
 
       {/* Layer 1 — cockpit frame (z-10) */}
       <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 10 }}>
@@ -600,24 +828,30 @@ export default function HUD(_props: HUDProps) {
 
       {/* Layer 2 — HUD panels (z-20) */}
       <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 20 }}>
-        <StatusPanel />
-        <WaveIndicator />
-        <ScanCmdButtons />
-        {isOrbital && <LaneIndicator />}
+        {/* Unified top-left: lane + status bars (was two separate panels) */}
+        <UnifiedTopLeftPanel />
         {isCombat && <AimCone />}
         {isCombat && <CombatReticle />}
         {isCombat && <LeadIndicator />}
         {isCombat && <MissileLockBar />}
         <FreeRoamHUD />
-        <RadarMinimap />
+        {/*
+         * RadarMinimap intentionally NOT rendered — code preserved in
+         * src/components/UI/RadarMinimap.tsx for future use.
+         * Bottom-right quadrant is now fully clear.
+         */}
         <LockedIndicator />
         <FPSCounter />
         <MiningAlert />
         <NotificationSystem />
       </div>
 
-      {/* Layer 3 — nav menu + dock (z-30) */}
-      <NavMenuBar />
+      {/* Layer 3 — bottom tab bar + dock (z-30) */}
+      {/*
+       * CombatLog moved into COMM panel — access via TopNavBar COMM tab
+       * or BottomTabBar COMM button.
+       */}
+      <BottomTabBar />
       <BottomDock />
     </>
   );
