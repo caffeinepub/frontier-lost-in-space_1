@@ -1,10 +1,4 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import {
-  ChromaticAberration,
-  EffectComposer,
-  Vignette,
-} from "@react-three/postprocessing";
-
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { useCameraStore } from "../../stores/cameraStore";
@@ -14,6 +8,7 @@ import { useExplosionStore } from "../../stores/useExplosionStore";
 import { useProjectileStore } from "../../stores/useProjectileStore";
 import type { ProjectileData } from "../../stores/useProjectileStore";
 import { useWeaponsStore } from "../../stores/useWeaponsStore";
+import { CombatTargetingSystem } from "../Combat/CombatTargetingSystem";
 import { EnemyLayer } from "../Combat/EnemyLayer";
 import { Explosion } from "../Combat/Explosion";
 import { Projectile } from "../Combat/Projectile";
@@ -41,6 +36,7 @@ function ProjectileLayer() {
         <Projectile
           key={proj.id}
           {...proj}
+          targetId={proj.targetId}
           onExpire={removeProjectile}
           onHit={removeProjectile}
         />
@@ -65,22 +61,6 @@ function ExplosionLayer() {
   );
 }
 
-/** Post-processing effects — only active in COMBAT mode */
-function PostFX() {
-  const mode = useCameraStore((s) => s.mode);
-  if (mode !== "combat") return null;
-  return (
-    <EffectComposer>
-      <ChromaticAberration
-        offset={new THREE.Vector2(0.002, 0.002)}
-        radialModulation={false}
-        modulationOffset={0}
-      />
-      <Vignette eskil={false} offset={0.3} darkness={0.7} />
-    </EffectComposer>
-  );
-}
-
 interface CameraOrbitControllerProps {
   thetaRef: React.MutableRefObject<number>;
   phiRef: React.MutableRefObject<number>;
@@ -92,9 +72,8 @@ const ORBITAL_RADIUS_OFFSET = 2.2;
 const ORBITAL_HEIGHT_PHI = 0.35;
 const COCKPIT_Z = 2.0;
 const COCKPIT_Y = 0.22;
-// Combat: tight orbit radius (close behind ship)
 const COMBAT_ORBIT_RADIUS = 2.2;
-const FREE_ROAM_SPEED = 1.5; // units/sec
+const FREE_ROAM_SPEED = 1.5;
 
 function CameraOrbitController({
   thetaRef,
@@ -110,23 +89,19 @@ function CameraOrbitController({
     const cameraMode = state.mode;
 
     if (cameraMode === "combat") {
-      // Auto-orbit using current lane radius
       const laneRadius = useLaneStore.getState().getCurrentRadius();
       thetaRef.current += delta * 0.03;
       const theta = thetaRef.current;
 
-      // Ship orbit point on the lane sphere
       const orbitX = Math.sin(theta) * laneRadius;
       const orbitZ = Math.cos(theta) * laneRadius;
 
-      // Camera sits slightly behind/above the orbit point
       const camX =
         orbitX * (COMBAT_ORBIT_RADIUS / laneRadius + 1) * 0.12 + orbitX;
       const camY = COCKPIT_Y + 0.1;
       const camZ =
         orbitZ * (COMBAT_ORBIT_RADIUS / laneRadius + 1) * 0.12 + orbitZ;
 
-      // Smooth lerp to combat position
       const lerpSpeed = 4.0 * delta;
       currentPosRef.current.x += (camX - currentPosRef.current.x) * lerpSpeed;
       currentPosRef.current.y += (camY - currentPosRef.current.y) * lerpSpeed;
@@ -138,7 +113,6 @@ function CameraOrbitController({
         currentPosRef.current.z,
       );
 
-      // Apply aim offsets to lookAt
       const aimPitch = state.aimPitch;
       const aimYaw = state.aimYaw;
       const lookDir = new THREE.Vector3(
@@ -156,12 +130,10 @@ function CameraOrbitController({
     }
 
     if (cameraMode === "freeRoam") {
-      // WASD movement in freeRoam
       const yaw = state.freeRoamYaw;
       const pitch = state.freeRoamPitch;
       const pos = { ...state.freeRoamPos };
 
-      // Forward/back/strafe based on yaw
       const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
       const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
       const speed = FREE_ROAM_SPEED * delta;
@@ -192,7 +164,7 @@ function CameraOrbitController({
       return;
     }
 
-    // Orbital mode — original logic
+    // Orbital mode
     const laneRadius = useLaneStore.getState().getCurrentRadius();
     const RADIUS = laneRadius + ORBITAL_RADIUS_OFFSET;
 
@@ -218,7 +190,6 @@ function CameraOrbitController({
     camera.lookAt(0, 0, 0);
   });
 
-  // Cockpit mode (legacy, keep for smooth transition if ever needed)
   useFrame((_, delta) => {
     const cameraMode = useCameraStore.getState().mode;
     if (
@@ -253,14 +224,12 @@ export default function GameCanvas() {
   const { showInventory, showCrafting, setNearestTargetDistance } =
     useGameStore();
 
-  // Spherical camera orbit state
   const thetaRef = useRef(0);
   const phiRef = useRef(0.35);
   const isDragging = useRef(false);
   const lastPointer = useRef({ x: 0, y: 0 });
   const keysDown = useRef<Set<string>>(new Set());
 
-  // Track keyboard state for freeRoam WASD
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => keysDown.current.add(e.code);
     const onKeyUp = (e: KeyboardEvent) => keysDown.current.delete(e.code);
@@ -272,7 +241,6 @@ export default function GameCanvas() {
     };
   }, []);
 
-  // Mouse look for COMBAT aim
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
       const mode = useCameraStore.getState().mode;
@@ -287,7 +255,6 @@ export default function GameCanvas() {
     return () => window.removeEventListener("mousemove", onMouseMove);
   }, []);
 
-  // Mouse look for freeRoam
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
       const mode = useCameraStore.getState().mode;
@@ -319,7 +286,6 @@ export default function GameCanvas() {
       className="w-full h-full relative"
       style={{ touchAction: "none" }}
       onPointerDown={(e) => {
-        // Only allow orbital drag in orbital mode
         if (mode !== "orbital") return;
         isDragging.current = true;
         lastPointer.current = { x: e.clientX, y: e.clientY };
@@ -364,7 +330,6 @@ export default function GameCanvas() {
           distance={300}
         />
 
-        {/* Camera controller */}
         <CameraOrbitController
           thetaRef={thetaRef}
           phiRef={phiRef}
@@ -372,10 +337,9 @@ export default function GameCanvas() {
           keysDown={keysDown}
         />
 
-        {/* Post-processing — combat mode only */}
-        <PostFX />
+        {/* Combat targeting — runs every frame */}
+        <CombatTargetingSystem />
 
-        {/* Scene */}
         <StarField />
 
         <group position={[0, 0, 0]}>
@@ -387,12 +351,10 @@ export default function GameCanvas() {
         <DerelictShips />
         <MiningLaser targetId={targetId} targetDistance={targetDistance} />
 
-        {/* Combat */}
         <EnemyLayer />
         <ProjectileLayer />
         <ExplosionLayer />
 
-        {/* Player */}
         <ShipController />
       </Canvas>
 

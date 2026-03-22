@@ -4,8 +4,8 @@ import { useCameraStore } from "../../stores/cameraStore";
 import { useInventoryStore } from "../../stores/inventoryStore";
 import { useMenuStore } from "../../stores/menuStore";
 import { useShipStore } from "../../stores/shipStore";
-import { useStoryStore } from "../../stores/storyStore";
 import { useEnemyStore } from "../../stores/useEnemyStore";
+import { useWeaponsStore } from "../../stores/useWeaponsStore";
 import { handleFireButton } from "../../systems/combat";
 import type { ResourceType } from "../../types/game";
 import { RESOURCES } from "../../utils/constants";
@@ -110,9 +110,8 @@ function ViewToggle() {
   );
 }
 
-/** SCAN + CMD buttons — ORBITAL only */
+/** SCAN + CMD buttons — ORBITAL only, no story triggers */
 function ScanCmdButtons() {
-  const { triggerEvent } = useStoryStore();
   const mode = useCameraStore((s) => s.mode);
   if (mode !== "orbital") return null;
 
@@ -120,7 +119,7 @@ function ScanCmdButtons() {
     <div className="absolute top-8 right-52 flex gap-2 pointer-events-auto">
       <button
         type="button"
-        onClick={() => triggerEvent("p1_scan_results")}
+        onClick={() => console.log("SCAN")}
         className="bg-black/70 border border-cyan-500/50 hover:border-cyan-400 hover:bg-cyan-500/10 text-cyan-400 text-[10px] font-mono tracking-widest uppercase px-3 py-1.5 rounded transition-all"
         data-ocid="hud.scan_button"
       >
@@ -128,7 +127,7 @@ function ScanCmdButtons() {
       </button>
       <button
         type="button"
-        onClick={() => triggerEvent("p1_systems_damaged")}
+        onClick={() => console.log("CMD")}
         className="bg-black/70 border border-cyan-500/50 hover:border-cyan-400 hover:bg-cyan-500/10 text-cyan-400 text-[10px] font-mono tracking-widest uppercase px-3 py-1.5 rounded transition-all"
         data-ocid="hud.cmd_button"
       >
@@ -140,14 +139,232 @@ function ScanCmdButtons() {
 
 function LockedIndicator() {
   const lockedTarget = useEnemyStore((s) => s.lockedTarget);
+  const enemies = useEnemyStore((s) => s.enemies);
   const mode = useCameraStore((s) => s.mode);
   if (!lockedTarget || mode !== "combat") return null;
+
+  const enemy = enemies.find((e) => e.id === lockedTarget);
+  if (!enemy) return null;
+
+  const dist = enemy.distance ?? 80;
+  const hpPct = enemy.hp / enemy.maxHp;
+  const threat = hpPct > 0.7 ? "LOW" : hpPct > 0.3 ? "MED" : "HIGH";
+  const threatColor =
+    threat === "LOW" ? "#00ff88" : threat === "MED" ? "#ffaa00" : "#ff4444";
+
   return (
     <div
-      className="absolute bottom-20 left-1/2 -translate-x-1/2 font-mono text-cyan-400 text-xs tracking-[0.3em] uppercase animate-pulse pointer-events-none"
-      style={{ textShadow: "0 0 8px rgba(0,255,255,0.8)" }}
+      className="absolute bottom-24 left-1/2 -translate-x-1/2 pointer-events-none text-center"
+      style={{ fontFamily: "monospace" }}
     >
-      LOCKED
+      <div
+        className="text-cyan-400 text-xs tracking-[0.3em] uppercase animate-pulse"
+        style={{ textShadow: "0 0 8px rgba(0,255,255,0.8)" }}
+      >
+        LOCKED
+      </div>
+      <div className="text-white text-[10px] tracking-widest mt-0.5">
+        DIST: {Math.round(dist)}u
+      </div>
+      <div
+        className="text-[10px] tracking-widest mt-0.5"
+        style={{ color: threatColor }}
+      >
+        THREAT: {threat}
+      </div>
+    </div>
+  );
+}
+
+/** Center crosshair reticle — color changes when target in range */
+function CombatReticle() {
+  const mode = useCameraStore((s) => s.mode);
+  const lockedTarget = useEnemyStore((s) => s.lockedTarget);
+  const enemies = useEnemyStore((s) => s.enemies);
+  const activeWeapon = useWeaponsStore((s) => s.activeWeapon);
+
+  if (mode !== "combat") return null;
+
+  const RANGES: Record<string, number> = { pulse: 60, rail: 200, missile: 120 };
+
+  let color = "rgba(255,255,255,0.5)";
+  if (lockedTarget) {
+    const enemy = enemies.find((e) => e.id === lockedTarget);
+    if (enemy) {
+      const dist = enemy.distance ?? 80;
+      const inRange = dist <= (RANGES[activeWeapon] ?? 80);
+      color = inRange ? "#00ff88" : "#ff4444";
+    }
+  }
+
+  return (
+    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+      <div style={{ position: "relative", width: 40, height: 40 }}>
+        {/* crosshair lines */}
+        <div
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: 0,
+            right: 0,
+            height: 1,
+            background: color,
+            opacity: 0.8,
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: 0,
+            bottom: 0,
+            width: 1,
+            background: color,
+            opacity: 0.8,
+          }}
+        />
+        {/* center dot */}
+        <div
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            width: 4,
+            height: 4,
+            background: color,
+            borderRadius: "50%",
+            transform: "translate(-50%,-50%)",
+          }}
+        />
+        {/* corner brackets */}
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: 8,
+            height: 8,
+            borderTop: `1px solid ${color}`,
+            borderLeft: `1px solid ${color}`,
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            right: 0,
+            width: 8,
+            height: 8,
+            borderTop: `1px solid ${color}`,
+            borderRight: `1px solid ${color}`,
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            bottom: 0,
+            left: 0,
+            width: 8,
+            height: 8,
+            borderBottom: `1px solid ${color}`,
+            borderLeft: `1px solid ${color}`,
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            bottom: 0,
+            right: 0,
+            width: 8,
+            height: 8,
+            borderBottom: `1px solid ${color}`,
+            borderRight: `1px solid ${color}`,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** Lead indicator — small marker offset from center showing estimated intercept */
+function LeadIndicator() {
+  const mode = useCameraStore((s) => s.mode);
+  const lockedTarget = useEnemyStore((s) => s.lockedTarget);
+  if (mode !== "combat" || !lockedTarget) return null;
+
+  return (
+    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+      <div style={{ position: "relative" }}>
+        <div
+          style={{
+            position: "absolute",
+            top: -25,
+            left: 15,
+            width: 8,
+            height: 8,
+            border: "1px solid rgba(255,200,0,0.7)",
+            borderRadius: "50%",
+            transform: "translate(-50%, -50%)",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** Missile lock charge bar */
+function MissileLockBar() {
+  const mode = useCameraStore((s) => s.mode);
+  const activeWeapon = useWeaponsStore((s) => s.activeWeapon);
+  const missileLocking = useWeaponsStore((s) => s.missileLocking);
+  const missileLockTimer = useWeaponsStore((s) => s.missileLockTimer);
+
+  if (mode !== "combat" || activeWeapon !== "missile" || !missileLocking)
+    return null;
+
+  const pct = Math.min((missileLockTimer / 1.5) * 100, 100);
+
+  return (
+    <div
+      className="absolute pointer-events-none"
+      style={{
+        bottom: "60%",
+        left: "50%",
+        transform: "translateX(-50%)",
+        width: 80,
+        marginTop: 12,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 9,
+          fontFamily: "monospace",
+          color: "#ff9900",
+          textAlign: "center",
+          letterSpacing: "0.15em",
+          marginBottom: 3,
+        }}
+      >
+        LOCKING...
+      </div>
+      <div
+        style={{
+          height: 3,
+          background: "rgba(255,255,255,0.1)",
+          borderRadius: 2,
+          overflow: "hidden",
+          border: "1px solid rgba(255,153,0,0.4)",
+        }}
+      >
+        <div
+          style={{
+            height: "100%",
+            width: `${pct}%`,
+            background: "#ff9900",
+            transition: "width 0.05s linear",
+          }}
+        />
+      </div>
     </div>
   );
 }
@@ -166,7 +383,6 @@ function FreeRoamHUD() {
   const fuelPct = Math.round((fuel / maxFuel) * 100);
   const cargoUsed = Math.round(totalWeight());
 
-  // Find top mined resource
   let topResource: { label: string; amount: number } | null = null;
   for (const [key, amt] of Object.entries(resources)) {
     const rKey = key as ResourceType;
@@ -199,7 +415,6 @@ function FreeRoamHUD() {
         boxShadow: "0 0 12px rgba(0,255,136,0.12)",
       }}
     >
-      {/* FUEL */}
       <div className="mb-2">
         <div className="flex justify-between mb-1">
           <span
@@ -228,8 +443,6 @@ function FreeRoamHUD() {
           />
         </div>
       </div>
-
-      {/* CARGO */}
       <div className="mb-2">
         <div className="flex justify-between">
           <span
@@ -242,8 +455,6 @@ function FreeRoamHUD() {
           </span>
         </div>
       </div>
-
-      {/* SCANNER */}
       <div
         style={{
           borderTop: "1px solid rgba(0,255,136,0.2)",
@@ -272,7 +483,6 @@ function FreeRoamHUD() {
   );
 }
 
-// All panels in menu bar; NAV + SCAN only shown in orbital mode
 const ALL_NAV_PANELS = [
   { id: "ship" as const, label: "SHIP", orbitOnly: false },
   { id: "cargo" as const, label: "CARGO", orbitOnly: false },
@@ -324,7 +534,6 @@ function NavMenuBar() {
   );
 }
 
-/** Bottom dock — WeaponPanel + FIRE only visible in COMBAT mode */
 function BottomDock() {
   const mode = useCameraStore((s) => s.mode);
   const isCombat = mode === "combat";
@@ -338,14 +547,11 @@ function BottomDock() {
         className="mx-auto flex items-end justify-center gap-3 px-4 pb-2"
         style={{ maxWidth: 700 }}
       >
-        {/* Weapon panel — COMBAT only */}
         {isCombat && (
           <div className="pointer-events-auto flex-1 transition-opacity duration-200">
             <WeaponPanel />
           </div>
         )}
-
-        {/* Mech log — always visible */}
         <div className="pointer-events-auto">
           <MechLogPanel />
         </div>
@@ -384,7 +590,6 @@ export default function HUD(_props: HUDProps) {
 
   return (
     <>
-      {/* View mode toggle — always on top */}
       <ViewToggle />
 
       {/* Layer 1 — cockpit frame (z-10) */}
@@ -395,34 +600,18 @@ export default function HUD(_props: HUDProps) {
 
       {/* Layer 2 — HUD panels (z-20) */}
       <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 20 }}>
-        {/* Status bars — always visible */}
         <StatusPanel />
-
-        {/* Wave indicator — always visible */}
         <WaveIndicator />
-
-        {/* SCAN/CMD — orbital only */}
         <ScanCmdButtons />
-
-        {/* Lane indicator — orbital only */}
         {isOrbital && <LaneIndicator />}
-
-        {/* Aim cone — combat only */}
         {isCombat && <AimCone />}
-
-        {/* Free Roam compact HUD */}
+        {isCombat && <CombatReticle />}
+        {isCombat && <LeadIndicator />}
+        {isCombat && <MissileLockBar />}
         <FreeRoamHUD />
-
-        {/* Radar — always visible */}
         <RadarMinimap />
-
-        {/* LOCKED — combat only */}
         <LockedIndicator />
-
-        {/* FPS */}
         <FPSCounter />
-
-        {/* Alerts */}
         <MiningAlert />
         <NotificationSystem />
       </div>

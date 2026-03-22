@@ -1,53 +1,49 @@
 # Frontier: Orbital Combat
 
 ## Current State
-- Two camera modes: `orbital` (far, auto-orbit) and `cockpit` (close, weapons UI)
-- ViewToggle at top-center cycles between the two
-- CameraOrbitController handles smooth lerp between modes
-- HUD conditionally shows orbital vs cockpit UI
-- MobileControls has a single left joystick for movement
-- `@react-three/postprocessing` is NOT installed
-- shipStore has fuel/maxFuel, cargo/maxCargo; inventoryStore has resources/totalWeight
+- App boots via StartScreen (requires click to start)
+- StoryPanel always mounted in App.tsx, triggers A.E.G.I.S. dialogue 3s after game starts
+- EnemyLayer spawns gradually, immediately hostile and approaching player
+- No targeting cone — lockedTarget exists in store but no cone auto-lock logic
+- All weapons fire same way; only pulse has spread; no missile lock-on, no rail hitscan
+- No passive patrol mode; no per-weapon behavior differentiation
+- HUD shows LOCKED but no distance/threat level display
 
 ## Requested Changes (Diff)
 
 ### Add
-- Third camera mode: `freeRoam` — full 6DOF flight, detached from orbital lock
-- Combat mode replaces cockpit: same close camera + weapons UI, but ship auto-orbits Earth and player only aims (±45° pitch, ±90° yaw)
-- Aim pitch/yaw state in cameraStore for combat mode
-- Desktop controls for freeRoam: WASD movement + mouse look (pointer lock)
-- Mobile controls for freeRoam: left joystick = move, right joystick = look direction
-- Post-processing effects (MotionBlur 0.6, ChromaticAberration, Vignette) active only in combat mode
-- Free Roam compact HUD overlay: fuel bar, cargo used/max, mineral scanner readout (top mined resource)
-- 200ms CSS fade transitions on all conditional HUD elements
-- Install `@react-three/postprocessing` package
+- CombatTargetingSystem 3D component: each frame finds nearest enemy within 45-deg cone from camera forward, updates lockedTarget
+- Cyan outline ring on locked enemy mesh
+- HUD target info: locked enemy distance + threat level (combat mode)
+- Reticle color: green when in weapon range, red when out of range
+- Lead indicator: 3D predicted intercept point for moving targets
+- Passive patrol: enemies orbit at fixed radius, not approaching, until hostile
+- Hostile trigger: enemy goes hostile when player within 40 units OR any weapon fired
+- setAllHostile() in useEnemyStore + hostile flag per enemy
+- Missile: 1.5s lock-on timer, then tracking projectile curves toward target
+- Rail: instant hitscan damage to locked target + brief beam visual
+- Distance-based accuracy: pulse spread scales with distance
 
 ### Modify
-- `CameraMode` type: `'orbital' | 'cockpit'` → `'orbital' | 'combat' | 'freeRoam'`
-- ViewToggle: cycles orbital→combat→freeRoam, with cyan/amber/green color theme
-- CameraOrbitController: add combat (close + auto-orbit, no drag) and freeRoam (6DOF WASD/mouse) branches
-- HUD conditional visibility: cockpit → combat; add freeRoam branch with compact HUD
-- LockedIndicator: show in `combat` mode instead of `cockpit`
-- AimCone + WeaponPanel: show in `combat` mode
-- LaneIndicator, ScanCmdButtons, NAV/SCAN menu tabs: show in `orbital` only
-- MobileControls: add second right joystick visible only in freeRoam mode
-- NavMenuBar: hide NAV/SCAN in combat and freeRoam
+- App.tsx: remove StoryPanel, skip StartScreen, remove triggerEvent useEffect
+- EnemyLayer: spawn exactly 6 enemies on mount with hostile=false
+- EnemyMesh: cyan ring when locked; patrol vs hostile movement logic
+- combat.ts handleFireButton: set all enemies hostile on fire; weapon-specific behavior
+- HUD LockedIndicator: show distance + threat level, not just LOCKED text
+- ScanCmdButtons: remove triggerEvent calls
 
 ### Remove
-- `cockpit` as a mode label (replaced by `combat`)
+- StartScreen from active render path
+- StoryPanel from App.tsx
+- Story useEffect (triggerEvent after 3s)
+- Immediate-hostile enemy spawn behavior
 
 ## Implementation Plan
-1. Install `@react-three/postprocessing` via package.json
-2. Update `cameraStore.ts`: add `combat` and `freeRoam` modes; add `aimPitch`, `aimYaw`, `setAimPitch`, `setAimYaw` to state
-3. Update `GameCanvas.tsx` CameraOrbitController to handle 3 modes:
-   - `orbital`: existing far auto-orbit logic
-   - `combat`: close camera, ship auto-orbits, player aim offsets camera direction via aimPitch/aimYaw
-   - `freeRoam`: WASD-driven position delta + mouse look via pointer lock
-4. Add PostProcessing wrapper in GameCanvas Canvas (EffectComposer with MotionBlur, ChromaticAberration, Vignette) — active only in combat mode
-5. Update `HUD.tsx`:
-   - ViewToggle: 3-way cycle with correct colors/icons/labels
-   - All `cockpit` references → `combat`
-   - Add `FreeRoamHUD` component: compact fuel/cargo/scanner readout, visible only in freeRoam
-   - Add CSS transition classes on conditional panel wrappers
-6. Update `MobileControls.tsx`: add right joystick for look direction, visible only in freeRoam mode; left joystick stays for all modes
-7. Wire combat aim: mouse move events update aimPitch/aimYaw when mode === combat; clamp to ±45° / ±90°
+1. Add hostile flag + setAllHostile to useEnemyStore
+2. Add missile lock state to useWeaponsStore
+3. Modify App.tsx: skip start screen, remove story
+4. Modify EnemyLayer: 6 enemies, patrol mode, hostile triggers
+5. Add CombatTargetingSystem inside Canvas
+6. Update EnemyMesh: cyan ring, patrol/hostile movement
+7. Update combat.ts: weapon-specific behaviors, hostile trigger
+8. Update HUD: target distance/threat display, reticle color
